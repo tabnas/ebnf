@@ -24,6 +24,10 @@ import {
   EbnfParseError,
   EbnfCompileError,
   EbnfConvertOptions,
+  EbnfElement,
+  EbnfSequence,
+  EbnfProduction,
+  EbnfGrammar,
 } from './converter'
 
 
@@ -62,7 +66,17 @@ export {
   EbnfCompileError,
 }
 
-export type { EbnfConvertOptions }
+// The IR aliases go out through the facade too. Without them a caller
+// cannot name the type of what `parseEbnf` returns without importing
+// `@tabnas/bnf` directly — which is precisely what the aliases exist to
+// avoid.
+export type {
+  EbnfConvertOptions,
+  EbnfElement,
+  EbnfSequence,
+  EbnfProduction,
+  EbnfGrammar,
+}
 
 
 // VERSION is this package's version. It MUST equal package.json

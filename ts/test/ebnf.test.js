@@ -533,6 +533,67 @@ describe('ebnf', () => {
     })
 
 
+    it('rejects two ε-deriving alternatives inside a group', () => {
+      // A group is a choice like any other, so it carries the same
+      // ambiguity. The check used to look at production-level alts
+      // only, so every grouped spelling slipped through and mis-parsed.
+      assert.throws(() => ebnf('A ::= ("x"? | "y"?) "y"'), (e) => {
+        assert.ok(e instanceof EbnfParseError)
+        assert.match(
+          e.message,
+          /a group in rule 'A' has 2 alternatives that each match nothing/)
+        return true
+      })
+      // Nested groups are reached too.
+      assert.throws(() => ebnf('A ::= (("x"? | "y"?) "z") "w"'), (e) => {
+        assert.ok(e instanceof EbnfParseError)
+        return true
+      })
+      // One nullable branch in a group is fine.
+      assert.doesNotThrow(() => ebnf('A ::= ("x"? | "y") "z"'))
+    })
+
+
+    it('rejects an empty alternative rather than reading it as epsilon', () => {
+      // Both dialects require an expression each side of `|`, and this
+      // package refuses an empty literal, so accepting ε here made the
+      // accepted language wider than the documented one.
+      for (const src of ['A ::= | "x"', 'A ::= "x" |', 'A = ;', 'A ::= ()']) {
+        assert.throws(() => ebnf(src), (e) => {
+          assert.ok(e instanceof EbnfParseError)
+          assert.match(e.message, /empty alternative/)
+          return true
+        }, `expected ${JSON.stringify(src)} to be rejected`)
+      }
+      assert.doesNotThrow(() => ebnf('A ::= "x" | "y"'))
+    })
+
+
+    it('rejects a leading comma, which ISO does not define', () => {
+      // ISO's comma separates concatenated items; it is not a prefix.
+      assert.throws(() => ebnf('A = , "x";'), (e) => {
+        assert.ok(e instanceof EbnfParseError)
+        assert.match(e.message, /leading comma/)
+        return true
+      })
+      // Between two items it is the documented ISO spelling.
+      assert.doesNotThrow(() => ebnf('A = "x" , "y";'))
+    })
+
+
+    it('accepts only the lowercase #xNN code-point spelling', () => {
+      // W3C specifies `#x`; `#X41` is not among the ISO spellings this
+      // package documents accepting, so it must not be case-folded.
+      assert.doesNotThrow(() => ebnf('A ::= #x41'))
+      assert.throws(() => ebnf('A ::= #X41'))
+      assert.doesNotThrow(() => ebnf('A ::= [#x20-#x7E]'))
+      assert.throws(() => ebnf('A ::= [#X20-#X7E]'))
+      // Hex digits themselves may be either case.
+      assert.doesNotThrow(() => ebnf('A ::= #xD7FF'))
+      assert.doesNotThrow(() => ebnf('A ::= #xd7ff'))
+    })
+
+
     it('rejects a reference to an undefined rule, naming both rules', () => {
       assert.throws(() => ebnf('A ::= B'), (e) => {
         assert.ok(e instanceof EbnfCompileError)

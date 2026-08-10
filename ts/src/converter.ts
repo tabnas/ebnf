@@ -227,8 +227,8 @@ const ebnfRules: Record<
   // element or the tenth — built by `seqAlts()` below.
   seq: {
     bo: (r) => { r.node = [] },
-    open: seqAlts(),
-    close: seqAlts(),
+    open: seqAlts(true),
+    close: seqAlts(false),
   },
 
   // One element: an atom followed by a (possibly empty) run of postfix
@@ -347,20 +347,39 @@ const ebnfRules: Record<
 // header of the next production. Everything else either starts an
 // element, is the ignorable ISO comma, or is a construct rejected by
 // name.
-function seqAlts(): any[] {
-  return [
-    // Sequence terminators — matched, then backed out so the enclosing
-    // rule sees the token.
-    { s: '#TX #DEFOP', b: 2, g: 'end' },
-    { s: '#ALT', b: 1, g: 'end' },
-    { s: '#RP', b: 1, g: 'end' },
-    { s: '#SC', b: 1, g: 'end' },
-    { s: '#ZZ', b: 1, g: 'end' },
+function seqAlts(first = false): any[] {
+  // In the opening state nothing has been read yet, so a terminator or
+  // a comma here means the alternative is empty or starts with a
+  // separator. Neither dialect allows either: W3C and ISO both require
+  // an expression on each side of `|`, and ISO's comma is a separator,
+  // not a prefix operator. Accepting them made `A ::= | "x"` an
+  // undocumented ε spelling in a package that refuses an empty literal.
+  const lead = first
+    ? [
+      { s: '#TX #DEFOP', b: 2, a: (r: Rule) => failEmptyAlternative(r.o[0]) },
+      { s: '#ALT', a: (r: Rule) => failEmptyAlternative(r.o[0]) },
+      { s: '#RP', a: (r: Rule) => failEmptyAlternative(r.o[0]) },
+      { s: '#SC', a: (r: Rule) => failEmptyAlternative(r.o[0]) },
+      { s: '#ZZ', a: (r: Rule) => failEmptyAlternative(r.o[0]) },
+      { s: '#CA', a: (r: Rule) => failLeadingComma(r.o[0]) },
+    ]
+    : [
+      // Sequence terminators — matched, then backed out so the
+      // enclosing rule sees the token.
+      { s: '#TX #DEFOP', b: 2, g: 'end' },
+      { s: '#ALT', b: 1, g: 'end' },
+      { s: '#RP', b: 1, g: 'end' },
+      { s: '#SC', b: 1, g: 'end' },
+      { s: '#ZZ', b: 1, g: 'end' },
 
-    // ISO 14977 writes concatenation explicitly. Consume the comma and
-    // carry on: in this dialect juxtaposition already means sequence,
-    // so the separator adds nothing but is harmless to accept.
-    { s: '#CA', p: 'elem' },
+      // ISO 14977 writes concatenation explicitly. Consume the comma
+      // and carry on: in this dialect juxtaposition already means
+      // sequence, so the separator adds nothing but is harmless here.
+      { s: '#CA', p: 'elem' },
+    ]
+
+  return [
+    ...lead,
 
     // Element starters.
     { s: '#ST', b: 1, p: 'elem' },
@@ -396,6 +415,32 @@ function at(tkn: any): string {
   return (null != loc.line && null != loc.column)
     ? ` at line ${loc.line}, column ${loc.column}`
     : ''
+}
+
+
+// An alternative with nothing in it. Both dialects require an
+// expression either side of `|`, and this package already refuses an
+// empty literal, so silently reading `A ::= | "x"` as an epsilon
+// alternative made the accepted language wider than the documented one.
+function failEmptyAlternative(tkn: any): never {
+  throw new EbnfParseError(
+    `ebnf: empty alternative${at(tkn)}. Both dialects require an ` +
+    `expression on each side of '|', and this notation has no epsilon ` +
+    `terminal; to make a construct optional write 'A?' rather than ` +
+    `'A |'.`,
+    tokenLoc(tkn),
+  )
+}
+
+
+// ISO 14977's comma separates concatenated items; it is not a prefix.
+function failLeadingComma(tkn: any): never {
+  throw new EbnfParseError(
+    `ebnf: leading comma${at(tkn)}. In ISO 14977 the comma separates ` +
+    `concatenated items, so it must appear between two of them — ` +
+    `'A , B', not ', A'.`,
+    tokenLoc(tkn),
+  )
 }
 
 
@@ -577,7 +622,9 @@ function parseCharClass(src: string, tkn: any): EbnfElement {
     const c = body[i]
 
     // `#xNN` — the W3C spelling of a code point inside a class.
-    if ('#' === c && ('x' === body[i + 1] || 'X' === body[i + 1])) {
+    // Lowercase `x` only, matching the standalone `#HX` matcher and the
+    // documented dialect; `#X41` is not an accepted spelling.
+    if ('#' === c && 'x' === body[i + 1]) {
       let j = i + 2
       while (j < body.length && /[0-9a-fA-F]/.test(body[j])) j++
       if (j === i + 2) {
@@ -763,8 +810,13 @@ function getEbnfParser(): (src: string) => EbnfProduction[] {
         // unclosed `[` fails at the bracket instead of swallowing the
         // rest of the grammar.
         '#CC': eager(/^\[\^?[^\]\n]*\]/),
-        // A standalone code point: `#x41`, `#xD7FF`.
-        '#HX': eager(/^#x[0-9a-fA-F]+/i),
+        // A standalone code point: `#x41`, `#xD7FF`. The `x` is
+        // lowercase — that is what W3C specifies, and `#X41` is not
+        // among the four ISO spellings this package documents
+        // accepting. Case-folding it would make the accepted language
+        // quietly wider than the supported/not-supported table says.
+        // The hex digits themselves may be either case (`#xD7FF`).
+        '#HX': eager(/^#x[0-9a-fA-F]+/),
         // The subtraction operator. Only reachable when `-` starts a
         // token; inside a name the text matcher has already eaten it.
         '#SUB': eager(/^-/),
@@ -951,17 +1003,42 @@ function checkNullableAlts(prods: EbnfProduction[]): void {
     }
   }
 
+  const complain = (subject: string, n: number): never => {
+    throw new EbnfParseError(
+      `ebnf: ${subject} has ${n} alternatives that each match nothing, ` +
+      `so the grammar is ambiguous: an empty input has more than one ` +
+      `derivation and no lookahead can choose between them. Make at ` +
+      `most one alternative optional — '(A | B)?' rather than 'A? | B?'.`,
+    )
+  }
+
+  // A group is a choice like any other, so the same ambiguity exists
+  // inside one: `A ::= ("x"? | "y"?) "y"` has two ε-deriving branches
+  // and mis-parses exactly as the production-level shape does. Checking
+  // only `p.alts` let every grouped spelling through.
+  const checkGroups = (el: EbnfElement, rule: string): void => {
+    switch (el.kind) {
+      case 'group': {
+        const n = el.alts.filter(altNullable).length
+        if (1 < n) complain(`a group in rule '${rule}'`, n)
+        for (const alt of el.alts) for (const e of alt) checkGroups(e, rule)
+        return
+      }
+      case 'opt':
+      case 'star':
+      case 'plus':
+      case 'rep':
+        checkGroups(el.inner, rule)
+        return
+      default:
+        return
+    }
+  }
+
   for (const p of prods) {
     const n = p.alts.filter(altNullable).length
-    if (1 < n) {
-      throw new EbnfParseError(
-        `ebnf: rule '${p.name}' has ${n} alternatives that each match ` +
-        `nothing, so the grammar is ambiguous: an empty input has more ` +
-        `than one derivation and no lookahead can choose between them. ` +
-        `Make at most one alternative optional — '(A | B)?' rather than ` +
-        `'A? | B?'.`,
-      )
-    }
+    if (1 < n) complain(`rule '${p.name}'`, n)
+    for (const alt of p.alts) for (const el of alt) checkGroups(el, p.name)
   }
 }
 

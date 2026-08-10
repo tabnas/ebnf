@@ -312,6 +312,10 @@ the subtraction operator, and rejected.
 | Space-bearing ISO meta-identifiers | names are one token | `EbnfParseError: … is not a valid symbol name` |
 | The same rule defined twice | EBNF has no incremental-alternatives operator | `EbnfParseError: rule 'X' is defined more than once` |
 | Two alternatives that both match nothing | genuinely ambiguous | `EbnfParseError: rule 'X' has 2 alternatives that each match nothing` |
+| The same, inside a group — `("x"? \| "y"?)` | a group is a choice too, so the ambiguity is identical | `EbnfParseError: a group in rule 'X' has 2 alternatives that each match nothing` |
+| Empty alternative — `\| A`, `A \|`, `A = ;`, `()` | both dialects require an expression each side of `\|`, and there is no epsilon terminal | `EbnfParseError: … empty alternative …` |
+| Leading comma — `A = , B ;` | ISO's comma separates concatenated items; it is not a prefix | `EbnfParseError: … leading comma …` |
+| Uppercase code point `#X41` | W3C specifies lowercase `#x`; accepting both would widen the dialect past this table | `EbnfParseError` (unexpected token) |
 | Reference to an undefined rule | nothing to compile | `EbnfCompileError: rule 'X' references unknown rule 'Y'` |
 | Purely left-recursive rule | no seed to anchor the iteration | `EbnfCompileError: rule 'X' is purely left-recursive` |
 
