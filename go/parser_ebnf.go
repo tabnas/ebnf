@@ -154,14 +154,18 @@ func (s *scanner) codePoint(hex, whole string) (rune, error) {
 type classPart struct{ lo, hi rune }
 
 func classEscape(cp rune, astral bool) string {
-	if astral {
-		return "\\u{" + strconv.FormatInt(int64(cp), 16) + "}"
-	}
-	h := strconv.FormatInt(int64(cp), 16)
-	for len(h) < 4 {
-		h = "0" + h
-	}
-	return "\\u" + h
+	// Go's RE2 spells a code point `\x{…}`; `\uXXXX` is the JavaScript
+	// spelling and RE2 refuses to compile it. The shared compiler
+	// converts `\x{…}` to `\uXXXX` when serialising a spec for the
+	// other runtime, so this is the right native form here — the two
+	// runtimes agree on the language, not on the source text.
+	//
+	// `astral` is therefore unused on this side: `\x{…}` reaches every
+	// code point, where JavaScript needs `\u{…}` and the `u` flag above
+	// the BMP. Kept in the signature so the two implementations stay
+	// readable side by side.
+	_ = astral
+	return "\\x{" + strconv.FormatInt(int64(cp), 16) + "}"
 }
 
 // parseCharClass lowers `[a-z]`, `[^<&]`, `[#x20-#x7E]` and friends onto

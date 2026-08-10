@@ -75,23 +75,23 @@ func TestGroupsAndAlternation(t *testing.T) {
 }
 
 func TestCharacterClasses(t *testing.T) {
-	// Patterns are emitted with \uXXXX escapes, byte-for-byte as the
-	// TypeScript front-end emits them — that identity is the point of
-	// the parity.
+	// Patterns use RE2's `\x{…}` spelling. The TypeScript front-end
+	// emits `\uXXXX` for the same class — the two runtimes agree on the
+	// language, not on the source text, and the shared compiler converts
+	// between the two spellings when serialising a spec across.
 	cases := []struct{ src, pattern, flags string }{
-		{`A ::= [a-z]`, `[\u0061-\u007a]`, ""},
+		{`A ::= [a-z]`, `[\x{61}-\x{7a}]`, ""},
 		// A hyphen that is not between two members is a literal member;
 		// the W3C grammars rely on this for classes like `[-+]`.
-		{`A ::= [-+]`, `[\u002d\u002b]`, ""},
-		{`A ::= [a-]`, `[\u0061\u002d]`, ""},
-		{`A ::= [#x20-#x7E]`, `[\u0020-\u007e]`, ""},
-		{`A ::= [#x9#xA#xD]`, `[\u0009\u000a\u000d]`, ""},
-		// Above the BMP the escape and the flag both have to change.
-		{`A ::= [#x10000-#x10FFFF]`, `[\u{10000}-\u{10ffff}]`, "u"},
+		{`A ::= [-+]`, `[\x{2d}\x{2b}]`, ""},
+		{`A ::= [a-]`, `[\x{61}\x{2d}]`, ""},
+		{`A ::= [#x20-#x7E]`, `[\x{20}-\x{7e}]`, ""},
+		{`A ::= [#x9#xA#xD]`, `[\x{9}\x{a}\x{d}]`, ""},
+		{`A ::= [#x10000-#x10FFFF]`, `[\x{10000}-\x{10ffff}]`, "u"},
 		// A negated class matches the COMPLEMENT of its members, which
 		// always contains every astral code point — so it needs `u` even
 		// with nothing astral written.
-		{`A ::= [^<&]`, `[^\u003c\u0026]`, "u"},
+		{`A ::= [^<&]`, `[^\x{3c}\x{26}]`, "u"},
 	}
 	for _, c := range cases {
 		g := mustParse(t, c.src)
@@ -252,5 +252,22 @@ func TestPurelyLeftRecursiveIsAnErrorNotAPanic(t *testing.T) {
 	if !strings.Contains(err.Error(), "left-recursive") {
 		t.Errorf("expected the diagnostic to name the problem, got %q",
 			err.Error())
+	}
+}
+
+func TestClassGrammarsActuallyCompile(t *testing.T) {
+	// The bug this exists to catch: the front-end emitted JavaScript's
+	// `\uXXXX` escape, which Go's RE2 refuses outright — so every
+	// grammar with a character class failed at regexp.Compile. Nothing
+	// caught it because no test had compiled a class grammar end to end.
+	for _, src := range []string{
+		`A ::= [a-z]+`,
+		`A ::= [^<&]`,
+		`A ::= [#x20-#x7E]*`,
+		`A ::= [a-z] [0-9]`,
+	} {
+		if _, err := Ebnf(src, nil); err != nil {
+			t.Errorf("%q should compile, got: %v", src, err)
+		}
 	}
 }
