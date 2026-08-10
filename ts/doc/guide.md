@@ -1,185 +1,216 @@
 # How-to guide
 
-Short, task-focused recipes. Each is self-contained and assumes you
-have the plugin installed (see the [tutorial](tutorial.md) for the
-basics). For the full API, every option, and the complete syntax,
-follow the links into the [reference](reference.md).
+Task-shaped recipes for `@tabnas/ebnf`. For an introduction see
+[tutorial.md](tutorial.md); for the exact API and dialect see
+[reference.md](reference.md).
 
-Every recipe starts from the same three imports:
-
-```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
-```
-
-## Use it as a plugin
-
-`Zon` is a plugin, not a standalone parser. Layer it onto a Tabnas
-engine that already has the jsonic grammar, then call `.parse()`:
+## Compile a grammar and install it
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`Greet ::= "hi" | "hello"`)
 
-j.parse('.{ .a = 1, .b = 2 }') // => { a: 1, b: 2 }
+tn.parse('hi').rule // => 'Greet'
 ```
 
-The instance is reusable — build it once and call `.parse()` as many
-times as you like. (Building the grammar is the expensive part; do not
-reconstruct the instance per parse.)
+`tn.ebnf(src)` converts and installs in one step. Compiling is the
+expensive part, so build the instance once and reuse it.
 
-## Parse a realistic build.zig.zon
+## Compile without installing
 
-A ZON manifest mixes named struct fields with tuple-style `paths`
-lists and allows trailing commas and `//` line comments:
+`tn.ebnf.toSpec(src)` — or the bare `ebnfConvert(src)` / `toSpec(src)`
+exports, which need no instance at all — return the `GrammarSpec`
+without touching the engine.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { ebnfConvert } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
-
-const manifest = j.parse(`.{
-    .name = "example",
-    .version = "0.0.1",
-    .minimum_zig_version = "0.14.0",
-    .dependencies = .{
-        .foo = .{
-            .url = "https://example.com/foo.tar.gz",
-            .hash = "1220deadbeef",
-        },
-    },
-    .paths = .{
-        "build.zig",
-        "src",
-    },
-}`)
-
-manifest // => { name: 'example', version: '0.0.1', minimum_zig_version: '0.14.0', dependencies: { foo: { url: 'https://example.com/foo.tar.gz', hash: '1220deadbeef' } }, paths: ['build.zig', 'src'] }
+const spec = ebnfConvert(`Greet ::= "hi" | "hello"`)
+Object.keys(spec.rule).includes('Greet') // => true
 ```
 
-## Parse numbers in every ZON base
+Useful for inspecting what a grammar compiled to, or for handing the
+spec to a different engine instance later.
 
-Numbers accept decimal, hex, octal, binary, floats, and `_` digit
-separators:
+## Choose the start rule
+
+The first production is the start rule by default. Override it with the
+`start` option — handy when a spec grammar lists its productions in
+document order rather than starting with the one you want.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { ebnfConvert } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
-
-j.parse('0x2a')      // => 42
-j.parse('0o52')      // => 42
-j.parse('0b101010')  // => 42
-j.parse('1_000_000') // => 1000000
-j.parse('3.14')      // => 3.14
+const spec = ebnfConvert('A ::= "x"\nB ::= "y"', { start: 'B' })
+spec.rule.__start__.open[0].p // => 'B'
 ```
 
-## Parse character literals as code points
+`__start__` is a synthetic wrapper the compiler adds so that
+end-of-source is always consumed.
 
-By default Zig char literals (`'A'`, `'\n'`, `'\u{1F600}'`) parse as
-one-character strings. Set `charAsNumber: true` to receive numeric
-code points instead:
+## Match one character out of a set
+
+Character classes are the W3C dialect's way to say "one character from
+here". The four forms:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseEbnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon, { charAsNumber: true })
-
-j.parse("'A'")          // => 65
-j.parse("'\\n'")        // => 10
-j.parse("'\\u{1F600}'") // => 128512
+const g = parseEbnf(`
+  Range ::= [a-z]
+  Enum  ::= [abc]
+  Not   ::= [^<&]
+  Code  ::= [#x20-#x7E]
+`)
+g.productions.map((p) => p.alts[0][0].kind) // => ['regex', 'regex', 'regex', 'regex']
 ```
 
-## Tag enum literals to tell them apart from strings
+All four compile to one IR `regex` element, which the shared compiler
+turns into a lexer matcher. Some details worth knowing before you copy a
+class out of a specification:
 
-Without options, an enum-literal value like `.red` becomes the plain
-string `'red'` — indistinguishable from `"red"` in the parsed tree.
-Set `enumTag` to wrap each enum value in a one-key object so you can
-tell which was which:
+- A class must open and close **on one line**.
+- A class cannot contain `]` — there are no escape sequences. Write a
+  literal `]` as the string `"]"`.
+- A `-` at the start or end of a class is a literal hyphen (`[-+]`).
+- `#xNN` inside a class is a code point, so `[#x9#xA#xD]` is
+  tab/newline/return and `[#x20-#x7E]` is printable ASCII.
+- A class reaching above U+FFFF switches the emitted pattern to `\u{…}`
+  with the `u` flag.
+
+## Translate a grammar out of a specification
+
+Most W3C spec grammars paste in unchanged. The three things that
+normally need editing:
+
+**Subtraction.** `CharData ::= [^<&]* - ([^<&]* ']]>' [^<&]*)` uses the
+difference operator, which is rejected. Where both sides are single
+characters, a negated class says the same thing:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon, { enumTag: '$enum' })
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`Body ::= [^&<]+`)
 
-j.parse('.{ .kind = .red, .label = "red" }') // => { kind: { $enum: 'red' }, label: 'red' }
+tn.parse('hello').src // => 'hello'
 ```
 
-The tag name is yours to choose — use whatever key your consumers
-expect.
+Where they are not, the subtraction has to be re-expressed as an
+explicit grammar — there is no mechanical translation.
 
-## Read multi-line Zig strings
+**Well-formedness constraints.** Annotations like `[ wfc: … ]` and
+`[ vc: … ]` that spec listings carry alongside productions are prose,
+not grammar. Delete them; a `[` outside a character class is an error.
 
-Consecutive lines prefixed with `\\` become a single string, joined
-with `\n` (the `\\` prefix is stripped from each line):
+**Character-level rules that assume no lexer.** Spec grammars are
+written for a scannerless parser, so they spell out whitespace
+handling. The tabnas lexer already skips whitespace between tokens,
+which means a char-level `Name ::= [a-z]+` will happily join two
+space-separated words. Use the built-in `TX` token where you want whole
+words:
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`Attr  ::= Name "=" Value
+Name  ::= TX
+Value ::= ST | NR`)
 
-const doc = j.parse(`.{
-  .description =
-    \\\\first line
-    \\\\second line
-  ,
-}`)
-
-doc // => { description: 'first line\nsecond line' }
+tn.parse('id = "x"').src // => 'id="x"'
 ```
 
-## Handle a parse error
+## Use the ISO 14977 spellings
 
-ZON deliberately rejects non-ZON input — a bare `{` opener, for
-instance. A failed parse throws the engine's parse error; catch it and
-read its fields:
+`=`, `,`, `;` and `(* … *)` are accepted alongside the W3C forms. The
+*operators* stay W3C — postfix `*`, not `{ … }`.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`
+  (* comments in this form work too, but do not nest *)
+  digits = digit , digit ;
+  digit  = [0-9] ;
+`)
 
-let threw = false
-try {
-  j.parse('{ a = 1 }') // not ZON: bare { is rejected
-} catch (err) {
-  threw = true
-  // err.code, err.row, err.col, err.message are available here.
-}
-threw // => true
+tn.parse('42').src // => '42'
 ```
 
-## Re-enable strict JSON while the plugin is loaded
+## Read a compile error
 
-Every grammar alternate the plugin adds carries the group tag `zon`.
-To switch those alts off — restoring the plain jsonic grammar while
-the plugin stays registered — exclude that tag:
+Errors come in two kinds, and the kind tells you where to look.
 
-```typescript
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+`EbnfParseError` — this front-end refused the source. It carries `line`
+and `column` where a token was involved.
 
-const j = new Tabnas().use(jsonic).use(Zon).options({
-  rule: { exclude: 'zon' },
-})
+```js
+const { parseEbnf } = require('@tabnas/ebnf')
+
+let where = null
+try { parseEbnf('A ::= "x"\nB ::= { "y" }') } catch (e) { where = [e.name, e.line] }
+where // => ['EbnfParseError', 2]
 ```
 
-This is rarely useful — you would normally just not load the plugin —
-but it is the supported way to peel the ZON layer back off.
+`EbnfCompileError` — the EBNF parsed, but `@tabnas/bnf` could not
+compile the resulting grammar. These name the offending **rule** rather
+than a source position, because the compiler works on the IR:
+
+```js
+const { ebnfConvert } = require('@tabnas/ebnf')
+
+let msg = null
+try { ebnfConvert('A ::= B') } catch (e) { msg = e.message }
+msg // => "ebnf: rule 'A' references unknown rule 'B'"
+```
+
+## Fix a grammar that compiles but will not parse
+
+The engine is deterministic with bounded lookahead. A grammar that
+defers its decision behind an unbounded prefix compiles, then fails on
+long inputs:
+
+```
+S ::= L "x" | L "y"
+L ::= "a"+
+```
+
+`a a y` does not parse: by the time the `y` is visible, the choice
+between the two alternatives is long past. Left-factor by hand so the
+shared prefix is parsed once and the decision happens after it:
+
+```js
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
+
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`S ::= L ( "x" | "y" )
+L ::= "a"+`)
+
+tn.parse('a a a y').src // => 'aaay'
+```
+
+The same move fixes most "it compiled but the parse is wrong" reports.
+See [concepts.md](concepts.md#deterministic-with-bounded-lookahead) for
+why the engine works this way.
+
+## Inspect the IR without emitting a spec
+
+`parseEbnf(src)` stops after the front-end's own work, returning
+`{ productions: [...] }`. Useful for tooling, for diffing two dialects
+of the same grammar, or for checking what an operator desugars to.
+
+```js
+const { parseEbnf } = require('@tabnas/ebnf')
+
+const g = parseEbnf('A ::= "x" B?')
+g.productions[0].alts[0].map((e) => e.kind) // => ['term', 'opt']
+```

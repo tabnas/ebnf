@@ -1,164 +1,171 @@
 # Concepts
 
-Background on how the ZON plugin is put together, and why. This is
-understanding-oriented reading — for steps see the
-[tutorial](tutorial.md) and [how-to guide](guide.md), and for exact
-signatures and syntax see the [reference](reference.md).
+Why `@tabnas/ebnf` is shaped the way it is. For the API see
+[reference.md](reference.md); for recipes see [guide.md](guide.md).
 
-## A grammar plugin on a shared engine
+## "EBNF" is a family, not a language
 
-The plugin has no parser of its own. It is a thin layer on a stack of
-three pieces:
+Extended BNF is a category of notation. The three best-known members
+disagree on nearly every surface detail:
 
-- the **Tabnas engine** (`@tabnas/parser`) — a rule-based parser over a
-  configurable, matcher-based lexer,
-- the **relaxed-JSON grammar** (`@tabnas/jsonic`) — the rules and
-  helper actions (`@array$`, the `val`/`map`/`list`/`pair`/`elem` rule
-  set) that turn tokens into objects and arrays, and
-- **this plugin** (`@tabnas/zon`) — the option overrides, custom lex
-  matchers, and small grammar overlay that retune that stack to read
-  Zig anonymous-struct syntax instead of JSON.
+| | ISO/IEC 14977 | W3C (XML §6) | Wirth |
+|---|---|---|---|
+| Definition | `a = b ;` | `a ::= b` | `a = b .` |
+| Optional | `[ b ]` | `b?` | `[ b ]` |
+| Repetition | `{ b }` | `b*` | `{ b }` |
+| Grouping | `( b )` | `( b )` | `( b )` |
+| Character set | *no notation* | `[a-z]`, `#xNN` | *no notation* |
+| Comment | `(* … *)` | `/* … */` | *none* |
+| Exception | `a - b` | `a - b` | *none* |
 
-Because the engine is configuration-driven, ZON support is mostly an
-options change plus a handful of alternates — not a new parser. The
-plugin embeds the canonical grammar text (from the repo-root
-`zon-grammar.jsonic`) as a string, parses it with a throwaway jsonic
-instance to get a grammar object, attaches its option overrides to that
-object, and hands the whole thing to the engine atomically via
-`tn.grammar(grammarDef, { rule: { alt: { g: 'zon' } } })`.
+They also disagree on things that are not surface detail. ISO
+meta-identifiers may contain spaces; W3C symbols may not. ISO has
+special sequences (`? … ?`) whose meaning is explicitly left to the
+user; W3C has none.
 
-## ZON is not a superset of JSON
+A package advertising "EBNF support" without saying which one is
+promising something it cannot deliver, because two of those columns
+cannot be read at once. `[a-z]` is either three characters or an
+optional three-element sequence; `{ x }` is either a repetition or a
+syntax error. No amount of cleverness resolves that — only a decision
+does.
 
-JSON and ZON share scalars but differ in structure:
+## Why W3C is the primary dialect
 
-| | JSON / jsonic | ZON |
-|---|---|---|
-| Open a map | `{` | `.{` (followed by `.field =`) |
-| Open a list | `[` | `.{` (otherwise) |
-| Close | `}` / `]` | `}` |
-| Key/value separator | `:` | `=` |
-| Keys | strings | `.identifier` |
-| Strings | `"` `'` `` ` `` | `"` only |
-| Comments | `#` `//` `/* */` | `//` only |
+Three reasons, in order of weight.
 
-The plugin makes those swaps by **disabling** what JSON allows and
-**adding** what ZON needs, rather than accepting both. That is a
-deliberate choice: a `build.zig.zon` file that accidentally used JSON
-braces should be a clear error, not a silent success.
+**There is a corpus.** XML 1.0, XML Namespaces, XPath 1.0 through 3.1,
+XQuery, XML Schema, XLink, JSONPath (RFC 9535 uses ABNF, but its
+predecessors and many implementations use this notation) and a long tail
+of related specifications publish load-bearing grammars in exactly this
+form. ISO 14977 is widely cited and, in the wild, almost never used
+verbatim — most "ISO EBNF" grammars are a per-tool dialect that borrowed
+its punctuation.
 
-## The four mechanisms
+**Every operator has a destination.** The grammar IR that
+[`@tabnas/bnf`](https://github.com/tabnas/bnf) compiles has `opt`,
+`star`, `plus`, `group`, `term`, `ref`, `token` and `regex` elements.
+W3C's `?`, `*`, `+`, `( … )`, `"…"`, bare symbols and `[…]`/`#xNN` map
+onto those one for one. ISO's `{ … }` and `[ … ]` map just as well —
+but its exception operator does not map at all, and picking ISO would
+mean advertising a dialect whose most distinctive operator is missing.
 
-The plugin reshapes the stack with four cooperating mechanisms, all
-applied together through one `GrammarSpec`:
+**Character classes are load-bearing.** A grammar for a text format
+needs to say "any character except `<` and `&`". W3C has notation for
+that; ISO 14977 does not, and grammars written in it enumerate the
+alternatives or fall back to prose. Since the tabnas lexer matches
+character classes with a regex matcher rather than a rule per character,
+`[…]` is the construct that makes real grammars compile to something
+efficient.
 
-1. **Custom lex matchers** own the `.`-prefixed and Zig-specific
-   tokens. They run ahead of the fixed-token matcher (high `order`
-   values) so they reliably claim their input:
-   - `.{` peeks ahead and emits `#OB` (struct) when followed by
-     `<ws>.ident<ws>=`, or `#OS` (tuple) otherwise.
-   - `.identifier`, and `.@"any name"`, emit `#TX` whose `val` is the
-     name with the dot stripped, and whose `use.zonEnum` flag marks it
-     for optional enum-tag wrapping.
-   - `\\`-prefixed lines emit one `#ST` string token with the joined
-     content. Zig lexes the whole run as one token, so blank lines
-     inside it continue the literal.
-   - char literals (`'x'`, `'\n'`, `'\xNN'`, `'\u{...}'`) emit a `#NR`
-     number token whose value is a one-char string or the code point,
-     per `charAsNumber`.
-   - numeric literals emit `#NR` from a matcher that reproduces Zig's
-     literal grammar exactly — jsonic's own number lexer is switched
-     off, because relaxed-JSON numbers (`+1`, `.5`, `0123`, `1__0`) are
-     not ZON numbers.
-   - `//!` and `///` fail the lex: they are Zig doc comments, which ZON
-     rejects.
+The ISO spellings that *are* accepted — `=`, `,`, `;`, `(* … *)` — were
+chosen by a single test: could a reader of a W3C grammar mistake them
+for anything else? None of them can. `=` never appears in W3C EBNF, nor
+does `,` or `;`, and `(*` cannot begin a legal W3C group (a group must
+open with an atom, and `*` is postfix). Accepting them costs nothing and
+lets a grammar written in the hybrid style most tools actually emit go
+through unchanged.
 
-2. **Token remapping.** `#CL` is rebound from `:` to `=`; the default
-   char mappings for `#OB`, `#OS`, and `#CS` are dropped to `null`, so
-   a stray `{`, `[`, or `]` produces a syntax error instead of silently
-   opening a structure. The default jsonic text matcher is turned off,
-   since identifiers only ever appear as `.ident` / `.@"..."` and are
-   owned by the custom matcher.
+## Best-effort means "refuse loudly"
 
-3. **Key-set restriction.** The `KEY` token set is narrowed to `#TX`
-   alone, so only an identifier (not a number or a quoted string) can
-   sit on the left of `=`.
+The interesting decision in a best-effort front-end is not what to
+support; it is what to do with the rest. There are three options:
 
-4. **Grammar overlay.** A few alternates are prepended to `val`,
-   `list`, `elem`, and `pair`, plus a before-close guard on `pair` that
-   rejects a repeated field name (Zig does too). They swap the list terminator from the
-   default `#CS` to `#CB`, seed the list node with `@array$`, and
-   accept a trailing comma before `}`. This is the only part written in
-   grammar text; everything else is options.
+1. Accept it and compile something approximate.
+2. Accept it and ignore it.
+3. Refuse it by name.
 
-The `{ rule: { exclude: 'jsonic,imp' } }` override also removes
-jsonic's implicit maps/lists, top-level commas, and path-dive
-extensions, and `{ rule: { start: 'val' } }` makes a single value the
-entry rule.
+The first two produce a parser that runs and is wrong — the worst
+possible outcome, because the failure surfaces as a mysterious
+mis-parse a long way from the grammar. This package takes the third
+option everywhere. `A - B` does not become `A`; `? … ?` does not become
+a comment; `{ A }` does not become `A*`. Each raises an
+`EbnfParseError` naming the construct and, where a token is involved,
+the line and column.
 
-## Struct vs tuple disambiguation
+That is also why the front-end validates symbol names. The engine's
+bareword token runs to the next delimiter, so without validation
+`Foo! ::= "x"` would define a rule genuinely called `Foo!`, and the typo
+would resurface much later as "references unknown rule `Foo`".
 
-ZON uses one opener, `.{`, for both maps and lists. The engine's parser
-allows only two tokens of lookahead, which is not enough to tell a
-struct from a tuple by grammar alone (you would have to see an
-arbitrary distance ahead to find the first `=`).
+## Deterministic, with bounded lookahead
 
-So the decision is pushed down into the lexer. When the `.{` matcher
-fires, it scans past the opening brace, whitespace, and `//` comments,
-then checks for `.ident` followed by `=`. If found, it emits `#OB`
-(struct); otherwise `#OS` (tuple). The grammar therefore only ever sees
-an already-classified open token, and a two-token-lookahead rule set is
-enough. This is why `.{}` parses as an **empty list** rather than an
-empty map: with nothing inside, there is no `.field =` to mark it as a
-struct.
+The tabnas engine is a push-down parser that dispatches on token
+lookahead declared by the grammar. The shared compiler computes
+multi-token prefixes for each alternative, and synthesises a
+mark/rewind *probe* for one specific shape: an optional prefix followed
+by a distinguishing token. It does not backtrack in general, and it does
+not explore alternatives in parallel.
 
-## Enum literals: one token, two roles
+That buys predictable, linear-ish parsing and error messages that point
+at a token rather than at the deepest failed branch of a search. What it
+costs is grammars whose decision point is unboundedly far from the
+information that decides it:
 
-A bare `.foo` token (`#TX`) is valid in two positions. Before `=` it is
-a key (the field name `foo`); in value position it is an enum literal
-(the value `'foo'`). Because `#TX` is a member of both the `KEY` and
-`VAL` token sets, the parser picks the right interpretation purely by
-context — no grammar branching is needed.
+```
+S ::= L "x" | L "y"
+L ::= "a"+
+```
 
-When `enumTag` is set, an enum literal in value position must be
-wrapped as `{ [enumTag]: name }`. The relaxed-JSON grammar already owns
-the value-close phase via `@val-bc/replace`, and once a phase is
-"replaced" the engine suppresses any `/prepend` on it. So the wrapping
-runs in the *after-close* phase (`@val-ac`): it checks whether the
-closed value came from a token carrying the `zonEnum` flag, and if so
-rebuilds the node as the tagged object. Keys are unaffected, because
-they are consumed in key position, not as values.
+`S` must commit to an alternative before running `L`, but nothing
+distinguishes them until after an arbitrarily long run of `a`. The
+grammar compiles; `a a y` does not parse.
 
-## Why reuse one instance
+The honest version of that limitation is the one stated above, not "the
+engine is LL(1)" (it is not — see `Expr ::= Term "+" Expr | Term`, which
+works via probe dispatch) and not a static rejection rule. This package
+deliberately does **not** try to detect the class statically: the
+boundary depends on both the grammar shape and the input depth, so a
+check sharp enough to catch the example above also rejects the standard
+expression grammar. Instead it refuses the one ambiguity it can rule out
+soundly — two alternatives that both match the empty string, which makes
+the *grammar* ambiguous rather than merely hard — and leaves the rest to
+be visible in the tests that pin it.
 
-Building the ZON grammar — parsing the embedded grammar text, applying
-the option overlay, wiring the custom matchers — dominates the cost of
-a parse; the parse itself, on a typical small ZON value, is cheap by
-comparison. The instance is stateless across parses (each parse builds
-its own context and only reads instance state), so the right pattern is
-to build the engine once and reuse it for every input. The repo's
-performance test guards exactly this: reuse stays linear, and the
-rebuild-per-parse anti-pattern is many times slower.
+The remedy is left-factoring, which the notation makes easy to see:
 
-## Accepted vs rejected — edge cases
+```
+S ::= L ( "x" | "y" )
+```
 
-- `.{}` → `[]`. An empty literal is a list, not a map.
-- `{ a = 1 }` → **error**. Bare `{` is not a ZON opener; it was
-  removed.
-- `'A'` → `'A'` by default, `65` with `charAsNumber: true`. The single
-  quote is a char literal, not a string delimiter.
-- `"a\\b"` → `'a\b'`. Double quotes are the only string delimiter, with
-  Zig escapes; an unknown escape is an error.
-- `.red` as a value → `'red'`, or `{ tag: 'red' }` with `enumTag`.
-- `.red` as a key (`.red = 1`) → key `red`; `enumTag` never applies to
-  keys.
-- Trailing comma before `}` → accepted in both structs and tuples.
-- `//` comment → discarded; `#` and `/* */` are **not** comments in
-  ZON.
+## Front-end, not compiler
 
-## Relationship to the Go port
+`@tabnas/ebnf` parses one notation into the IR and stops:
 
-The plugin ships in two implementations — this TypeScript one and a Go
-port — built from the same canonical `zon-grammar.jsonic`. The
-TypeScript version is the reference. For the Go API shape, value types,
-and any accepted differences, see
-[../../go/doc/concepts.md](../../go/doc/concepts.md).
+```
+EBNF text ──parseEbnf──▶ Grammar ──bnf.emitGrammarSpec──▶ GrammarSpec
+```
+
+Everything hard about the second arrow — desugaring repetition into
+helper rules, eliminating left recursion, tail-repeat rewriting, probe
+dispatch, literal lifting, token allocation, first-set analysis, chain
+emission — lives in `@tabnas/bnf` and is shared with
+[`@tabnas/abnf`](https://github.com/tabnas/abnf) and
+[`@tabnas/gbnf`](https://github.com/tabnas/gbnf).
+
+That split is why this package is small, and why its diagnostics come in
+two flavours. An `EbnfParseError` is about *your source text* and knows
+where in it the problem is. An `EbnfCompileError` is about *your
+grammar* and names a rule, because by then the text is gone.
+
+It is also why the AST is not a mirror of the productions you wrote. The
+compiler folds a rule whose body is a single token segment into its
+caller, rewrites a left-recursive rule into an iterative one, and routes
+multi-reference alternatives through synthetic `$stepN` continuation
+rules. The tree reflects the compiled grammar. Where you need a node,
+give the rule something to be — a second element keeps it a rule rather
+than a token.
+
+## Case sensitivity is a dialect fact
+
+W3C EBNF literals match exactly; RFC 5234 (ABNF) literals are
+case-insensitive unless prefixed `%s`. The IR carries a `caseSensitive`
+flag precisely so the two front-ends can state their own intent and
+share one emitter: this package sets it on every literal, and the
+emitter lowers a case-sensitive literal to a plain fixed token while a
+case-insensitive one becomes a case-folding regex matcher.
+
+A consequence worth knowing: an EBNF grammar's literals show up in
+`spec.options.fixed.token`, where an ABNF grammar's show up in
+`spec.options.match.token`. If you are reading a compiled spec to see
+what the lexer will do, that is where to look.

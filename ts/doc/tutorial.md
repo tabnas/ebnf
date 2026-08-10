@@ -1,130 +1,170 @@
-# Tutorial — your first ZON parse
+# Tutorial
 
-This walks you from nothing to a working parse, then through one
-option and one error. Follow it in order; each step builds on the
-last. When you finish you will have installed the plugin, parsed a
-struct and a tuple, switched on an option, and handled a parse error.
+Build a working parser from an EBNF grammar, one construct at a time.
+By the end you will have compiled a small expression language and used
+it to parse real input.
 
-For a recipe-style index of individual tasks, see the
-[how-to guide](guide.md). For exhaustive signatures and the full
-syntax, see the [reference](reference.md). For how it all works, see
-[concepts](concepts.md).
-
-## 1. Install
-
-`@tabnas/zon` is a grammar plugin: it has no parser of its own. It runs
-on the Tabnas engine, with the relaxed-JSON grammar from
-`@tabnas/jsonic` underneath. Install all three:
+Prerequisites: Node 24+, and
 
 ```bash
-npm install @tabnas/parser @tabnas/jsonic @tabnas/zon
+npm install @tabnas/parser @tabnas/bnf @tabnas/ebnf
 ```
 
-`@tabnas/parser` (>= 2) and `@tabnas/jsonic` (>= 2) are peer
-dependencies.
+Everything here uses the **W3C dialect** of EBNF — `::=` for
+definitions, postfix `?` `*` `+` for repetition, `[…]` for character
+classes. If you have written ISO/IEC 14977 before, read
+[reference.md](reference.md#what-is-and-is-not-supported) first: the
+brackets mean something different here.
 
-## 2. Build a parser
+## 1. A grammar with one rule
 
-Create a Tabnas engine, layer the jsonic grammar onto it, then layer
-the ZON plugin on top. The result is a reusable parser instance:
+A grammar is a list of productions. Install one on an engine with
+`tn.ebnf(...)`, and the engine can parse that language.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`Greet ::= "hi" | "hello"`)
 
-j.parse('.{ .name = "Alice", .age = 30 }') // => { name: 'Alice', age: 30 }
+tn.parse('hi').rule // => 'Greet'
+tn.parse('hello').src // => 'hello'
 ```
 
-You wrote Zig anonymous-struct syntax — `.{ ... }` to open, `.field`
-for each key, `=` to assign — and got back a plain object. That is the
-point: the plugin teaches the engine to read ZON.
+`|` separates alternatives. Quoted strings are terminals, matched
+exactly — W3C EBNF literals are case-**sensitive**, so `"hi"` does not
+match `HI`.
 
-## 3. Parse a tuple
+Each rule that matches contributes one node to the parse tree, with
+three fields: `rule` (the production name), `src` (the text it matched)
+and `kids` (child nodes).
 
-The same `.{ ... }` opener also makes tuples. When the brace is *not*
-immediately followed by `.field =`, the values inside become an array:
+## 2. Sequences and references
+
+Put elements side by side to match them in order. Write a bare symbol
+name to reference another production.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`
+  Greeting ::= "hello" Name
+  Name     ::= [a-z]+
+`)
 
-j.parse('.{ 1, 2, 3 }')      // => [1, 2, 3]
-j.parse('.{ "a", "b" }')     // => ['a', 'b']
+const out = tn.parse('hello world')
+out.kids.map((k) => k.rule) // => ['Name']
+out.kids[0].src // => 'world'
 ```
 
-The plugin decides struct-vs-tuple by peeking past the opening brace,
-so you never have to mark which one you mean — just write it.
+`[a-z]` is a **character class**: it matches exactly one character from
+the set. `+` after it means "one or more". `Name` is a sub-rule, so it
+appears as a child node; `"hello"` is a terminal, so it does not.
 
-## 4. Nest and mix
+## 3. Repetition and optionality
 
-Structs and tuples nest freely, and a struct can hold both:
+The three postfix operators are `?` (zero or one), `*` (zero or more)
+and `+` (one or more). Parentheses group a sub-expression so an operator
+applies to all of it.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`List ::= "[" ( Item ( "," Item )* )? "]"
+Item ::= NR`)
 
-j.parse('.{ .xs = .{ 1, 2, 3 }, .y = .{ .z = true } }') // => { xs: [1, 2, 3], y: { z: true } }
+tn.parse('[]').src // => '[]'
+tn.parse('[1,2,3]').src // => '[1,2,3]'
 ```
 
-This is the shape of a real `build.zig.zon` manifest: named fields,
-some holding nested structs, some holding tuple-style path lists.
+That is the standard "comma-separated, possibly empty" shape: an
+optional group containing one item followed by zero or more
+`, item` pairs.
 
-## 5. Turn on an option
+`NR` is one of the engine's **built-in lexer tokens** (`TX` bareword,
+`NR` number, `ST` quoted string, `VL` `true`/`false`/`null`). They are
+not part of W3C EBNF; they come from the shared compiler, and they are
+what makes a token-level grammar practical on this engine.
 
-The plugin is configured through its second `use()` argument. For
-example, a Zig char literal like `'A'` is a one-character string by
-default; set `charAsNumber: true` to get its code point instead:
+## 4. A whole small language
+
+Precedence in EBNF is expressed by layering rules: an expression is a
+sum of terms, a term is a product of factors, a factor is a number or a
+parenthesised expression.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon, { charAsNumber: true })
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`
+  Expr   ::= Term ( ( "+" | "-" ) Term )*
+  Term   ::= Factor ( ( "*" | "/" ) Factor )*
+  Factor ::= NR | "(" Expr ")"
+`)
 
-j.parse("'A'") // => 65
+tn.parse('1 + 2 * 3').src // => '1+2*3'
+tn.parse('(1+2)*3').src // => '(1+2)*3'
+tn.parse('1 + 2 - 3 * 4 / 5').rule // => 'Expr'
 ```
 
-There are only two options, `charAsNumber` and `enumTag`; the
-[reference](reference.md#options) lists both with their defaults.
+`src` has no spaces in it because the lexer skips whitespace between
+tokens: `src` is the concatenation of what matched, not a slice of the
+input.
 
-## 6. Catch an error
+## 5. When a grammar is refused
 
-ZON is not a superset of JSON. A bare `{` is not a valid opener — the
-plugin removes it on purpose — so parsing one throws:
+The front-end refuses constructs it cannot compile, by name, at compile
+time — not at parse time, and not silently.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { ebnfConvert, EbnfParseError } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
-
-let threw = false
-try {
-  j.parse('{ a = 1 }') // not ZON: bare { is rejected
-} catch (e) {
-  threw = true
-}
-threw // => true
+let name = null
+try { ebnfConvert('A ::= B - C') } catch (e) { name = e.name }
+name // => 'EbnfParseError'
 ```
 
-The thrown error is the engine's standard parse error, with a code,
-a source location, and a formatted message you can show a user.
+`A - B` is ISO/IEC 14977's exception operator (and W3C's too). The
+grammar IR has no difference operator, so rather than compiling
+something almost-right, the converter stops and says so. The same is
+true of `? … ?` special sequences and `{ A }` bracket repetition —
+see [reference.md](reference.md#what-is-and-is-not-supported) for the
+complete list.
 
-## Where to go next
+## 6. Left recursion
 
-- [How-to guide](guide.md) — focused recipes for individual tasks.
-- [Reference](reference.md) — the public API, every option, the full
-  ZON syntax accepted.
-- [Concepts](concepts.md) — how the plugin reshapes the engine, and
-  why.
+The natural way to write "an expression is an expression plus a term" is
+left-recursive. Write it that way; the shared compiler rewrites it.
+
+```js
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
+
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`
+  Expr ::= Expr "+" Term | Term
+  Term ::= NR
+`)
+
+tn.parse('1+2+3').kids.map((k) => k.rule) // => ['Term', 'Term']
+```
+
+The rewrite is `Expr ::= Term ( "+" Term )*`, so the tree comes out flat
+rather than left-nested, and the leading `1` folds into `Expr` itself
+instead of surfacing as its own `Term`. That is a property of the
+rewrite, not a bug — see [the README's left-recursion
+section](../../README.md#left-recursion).
+
+## Where next
+
+- [guide.md](guide.md) — recipes: character classes, translating a spec
+  grammar, left-factoring, reading errors.
+- [reference.md](reference.md) — the API and the exact dialect.
+- [concepts.md](concepts.md) — why the dialect is W3C, and what
+  "deterministic with bounded lookahead" costs you.

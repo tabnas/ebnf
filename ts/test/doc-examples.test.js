@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* Copyright (c) 2013-2026 Richard Rodger, MIT License */
 
 /*  doc-examples.test.js
@@ -115,12 +114,13 @@ function importsToRequire(code) {
 }
 
 // Rewrite `<expr>  // => <expected>` lines into __eq(expr, expected) calls.
-// The `m` flag matters. This regex is used two ways: per LINE inside
-// rewriteAssertions (where `$` is the line end either way), and as the
-// whole-BLOCK opt-in gate below (`ARROW.test(joined)`). Without `m`, `$`
-// anchors to the end of the joined block, so a block whose `// =>` is not on
-// its last line was silently dropped from the suite — no skip, no count, no
-// trace. With `m` the gate sees an assertion wherever it appears.
+//
+// The `m` flag is load-bearing. This regex is used two ways: per line (in
+// rewriteAssertions) and against a whole joined block (the opt-in gate in the
+// suite below). Without `m`, `$` anchors to the end of the WHOLE string, so
+// the gate only saw a `// =>` sitting on the block's last line — every block
+// that made an assertion and then carried on was silently dropped, and the
+// suite stayed green while testing less than it claimed.
 const ARROW = /\/\/\s*=>(.*)$/m
 function rewriteAssertions(code) {
   let count = 0
@@ -191,16 +191,16 @@ describe('doc-examples', () => {
     })
   }
 
-  it('found at least one tested example (sanity)', () => {
-    // This read `testable >= 0`, which is true for every possible value —
-    // including 0. If doc discovery or the fence extractor broke, every doc
-    // example would stop running and this suite would stay green while
-    // checking nothing. This repo's docs do carry `// =>` examples, so
-    // "at least one" is the honest bound.
+  it('the extractor is still finding the repo doc examples', () => {
+    // A count is never negative, so `testable >= 0` could not fail: if the
+    // block extractor broke or the doc paths moved, every doc example would
+    // stop running and the suite would stay green while testing nothing.
+    // Requiring most of the blocks this repo demonstrably carries is the
+    // honest assertion. Raise the floor when the docs grow.
     assert.ok(
-      0 < testable,
-      `tested ${testable} doc example block(s): the extractor found none, ` +
-        `so the doc examples are not being checked at all`,
+      testable >= 20,
+      `only ${testable} doc example block(s) were executed (expected >=20) — ` +
+        `the extractor or the doc paths are broken (files scanned: ${files.length})`,
     )
   })
 })

@@ -1,67 +1,61 @@
-# @tabnas/zon
+# @tabnas/ebnf
 
-A [Tabnas](https://github.com/tabnas/parser) grammar plugin that parses
-[Zig Object Notation (ZON)](https://ziglang.org/documentation/master/#ZON)
-text into objects, arrays, and scalar values. ZON is the anonymous-struct
-data format used for Zig `build.zig.zon` manifests.
+EBNF grammar compiler for the [Tabnas](https://github.com/tabnas/parser)
+parser: takes EBNF source in the **W3C dialect** and emits a tabnas
+`GrammarSpec`.
+
+**This is a best-effort front-end.** It implements one dialect properly
+and refuses the rest by name — ISO/IEC 14977 subtraction (`A - B`),
+special sequences (`? … ?`) and bracket repetition (`{ A }` / `[ A ]`)
+all raise a named error rather than compiling to something plausible.
+The itemised list is in
+[doc/reference.md](doc/reference.md#what-is-and-is-not-supported); read
+it before writing a grammar.
 
 ## Install
 
 ```bash
-npm install @tabnas/parser @tabnas/jsonic @tabnas/zon
+npm install @tabnas/parser @tabnas/bnf @tabnas/ebnf
 ```
 
-Requires `@tabnas/parser` >= 2 and `@tabnas/jsonic` >= 2 as peer
-dependencies.
+`@tabnas/parser` (the engine) and `@tabnas/bnf` (the shared compiler)
+are peer dependencies.
 
 ## One example
 
-The plugin layers onto a Tabnas engine that already has the jsonic
-grammar:
-
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf(`
+  Expr   ::= Term ( ( "+" | "-" ) Term )*
+  Term   ::= Factor ( ( "*" | "/" ) Factor )*
+  Factor ::= NR | "(" Expr ")"
+`)
 
-j.parse('.{ .name = "Alice", .age = 30 }') // => { name: 'Alice', age: 30 }
-j.parse('.{ 1, 2, 3 }')                     // => [1, 2, 3]
+tn.parse('1 + 2 * 3').src // => '1+2*3'
+tn.parse('(1+2)*3').rule  // => 'Expr'
 ```
 
-Build the instance once and reuse it — constructing the grammar is the
-expensive part.
+Build the instance once and reuse it — compiling the grammar is the
+expensive part. `tn.ebnf.toSpec(src)` builds the spec without installing
+it.
 
 ## Documentation
 
-Full documentation follows the [Diátaxis](https://diataxis.fr)
-framework:
+Four-quadrant [Diátaxis](https://diataxis.fr) docs:
 
-- [Tutorial](doc/tutorial.md) — a guided first parse, start to finish.
-- [How-to guide](doc/guide.md) — short recipes for individual tasks.
-- [Reference](doc/reference.md) — the public API, every option, and the
-  complete ZON syntax accepted.
-- [Concepts](doc/concepts.md) — how the plugin reshapes the engine, and
-  why.
+| Quadrant | File |
+|---|---|
+| Tutorial (learn) | [doc/tutorial.md](doc/tutorial.md) |
+| How-to guide (tasks) | [doc/guide.md](doc/guide.md) |
+| Reference (API + dialect) | [doc/reference.md](doc/reference.md) |
+| Concepts (why) | [doc/concepts.md](doc/concepts.md) |
 
-For the Go port, see [`../go/README.md`](../go/README.md).
-
-## Grammar diagram
-
-The grammar is defined in the top-level
-[`zon-grammar.jsonic`](../zon-grammar.jsonic) and embedded into this
-implementation (and the Go port) by [`embed-grammar.js`](embed-grammar.js)
-during the build.
-
-The installed grammar as a railroad/syntax diagram, generated with
-[`@tabnas/railroad`](https://github.com/tabnas/railroad):
-
-![zon grammar railroad diagram](doc/grammar.svg)
-
-A vertical ASCII version is in [`doc/grammar.txt`](doc/grammar.txt).
+Repo-level orientation, including the full supported/unsupported table,
+is in the [top-level README](../README.md).
 
 ## License
 
-Copyright (c) 2025 Richard Rodger and other contributors,
-[MIT License](LICENSE).
+MIT. Copyright (c) Richard Rodger.

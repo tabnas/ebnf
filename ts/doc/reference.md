@@ -1,315 +1,283 @@
 # Reference
 
-The complete public surface of `@tabnas/zon` (TypeScript): exports,
-the parse entry, the two options, and the exact ZON syntax accepted.
-For a guided introduction see the [tutorial](tutorial.md); for task
-recipes see the [how-to guide](guide.md); for how it works see
-[concepts](concepts.md).
+Complete API surface and dialect definition for `@tabnas/ebnf`. For an
+introduction see [tutorial.md](tutorial.md); for usage recipes see
+[guide.md](guide.md).
 
-## Package
+All exports come from the package root:
 
-```bash
-npm install @tabnas/parser @tabnas/jsonic @tabnas/zon
+```js ignore
+const {
+  ebnf, ebnfConvert, toSpec, parseEbnf,
+  emitGrammarSpec, eliminateLeftRecursion, ebnfRules,
+  EbnfParseError, EbnfCompileError, VERSION,
+} = require('@tabnas/ebnf')
 ```
 
-| | |
-|---|---|
-| Package | `@tabnas/zon` |
-| Module type | CommonJS (`main: dist/zon.js`, types `dist/zon.d.ts`) |
-| Peer deps | `@tabnas/parser` >= 2, `@tabnas/jsonic` >= 2 |
-| Engine | `@tabnas/parser` (Tabnas) |
-| Underlying grammar | `@tabnas/jsonic` |
+## Conversion
 
-## Exports
+### `ebnfConvert(src, opts?) => GrammarSpec`
 
-| Export | Kind | Description |
-|---|---|---|
-| `Zon` | `Plugin` | The plugin function. Register with `engine.use(Zon, options)`. |
-| `VERSION` | `string` | This package's version, always equal to `package.json` "version". |
-| `ZonOptions` | type | The options object shape (see [Options](#options)). |
+Take EBNF source and return a tabnas `GrammarSpec` (with a `ref` map of
+action closures, an `options` block, and a `rule` table). This is the
+primary entry point. Also exported as `toSpec`, and available on an
+instance as `tn.ebnf.toSpec`.
 
-`Zon.defaults` (a `ZonOptions`) holds the merged default options:
+- `src: string` — the EBNF source.
+- `opts?: EbnfConvertOptions` — see below.
 
-```typescript
-Zon.defaults = {
-  charAsNumber: false,
-  enumTag: null,
-}
-```
+Throws `EbnfParseError` if the source cannot be read, `EbnfCompileError`
+if it reads but cannot be compiled.
 
-## Parse entry
+### `parseEbnf(src) => EbnfGrammar`
 
-The plugin has **no convenience `parse()` function** of its own. You
-parse by building a Tabnas engine, layering the jsonic grammar, then
-the `Zon` plugin, and calling the engine's `.parse()`:
+Parse EBNF source into the grammar IR (`{ productions: [...] }`)
+*without* emitting a spec. Each production is `{ name, alts }`, where
+`alts` is a list of sequences of `EbnfElement`s.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { parseEbnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon)
-
-j.parse('.{ .a = 1 }') // => { a: 1 }
+const g = parseEbnf('A ::= "x" B*')
+g.productions[0].alts[0].map((e) => e.kind) // => ['term', 'star']
 ```
 
-### `engine.use(Zon, options?)`
+Throws `EbnfParseError` for malformed source, for a refused construct,
+or when the source defines no productions.
 
-Registers and immediately applies the plugin. Returns the engine, so
-registrations chain (`new Tabnas().use(jsonic).use(Zon, opts)`). The
-plugin merges `options` over `Zon.defaults`, installs the embedded ZON
-grammar, and re-applies its jsonic option overrides (struct/tuple
-tokens, `=` separator, identifier keys, Zig escapes, ZON comments, the
-strict Zig number lexer, and the five custom lex matchers).
+### `emitGrammarSpec(grammar, opts?) => GrammarSpec`
 
-The instance is reusable and stateless across parses; build it once
-and reuse it. Building the grammar dominates a parse, so do not
-reconstruct the engine per call.
+Re-exported from `@tabnas/bnf`. Convert an already-parsed grammar into a
+`GrammarSpec`. `ebnfConvert(src)` is `emitGrammarSpec(parseEbnf(src), {
+tag: 'ebnf', ... })`.
 
-### `engine.parse(src)`
+### `eliminateLeftRecursion(grammar) => EbnfGrammar`
 
-Parses a ZON source string and returns the resulting JavaScript value.
-Objects come back as maps built with `Object.create(null)` (no
-prototype); arrays are plain arrays; scalars are `number`, `string`,
-`boolean`, or `null` — plus `bigint` for an integer literal too large to
-be an exact double. A failed parse throws (see [Errors](#errors)).
+Re-exported from `@tabnas/bnf`. Rewrite direct and indirect left
+recursion via Paull's algorithm, returning a new grammar. Called
+internally by `emitGrammarSpec`; exported for inspection.
 
-## Options
+### `ebnfRules`
 
-`ZonOptions` has exactly two fields:
+The declarative table of tabnas rules that defines the EBNF grammar
+itself — the meta-grammar this package uses to read EBNF source.
+Exported for introspection and tooling.
 
-```typescript
-type ZonOptions = {
-  charAsNumber: boolean
-  enumTag: null | string
-}
-```
+### `EbnfConvertOptions`
 
-### `charAsNumber`
+The shared compiler's `ConvertOptions`, unchanged.
 
-- **Type:** `boolean`
-- **Default:** `false`
-- **Effect:** Controls how Zig character literals (`'x'`, `'\n'`,
-  `'\x41'`, `'\u{1F600}'`) are parsed.
-  - `false` — the literal becomes a one-character string. `'A'` → `'A'`.
-  - `true` — the literal becomes its numeric Unicode code point. `'A'`
-    → `65`, `'\n'` → `10`, `'\u{1F600}'` → `128512`.
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `start` | `string` | first production | Start rule name. |
+| `tag` | `string` | `'ebnf'` | Group tag stamped on every emitted alt. |
+| `builtins` | `boolean` | `false` | Emit probe dispatch and tree building as engine `$`-builtin refs instead of closures, keeping the spec function-free and serializable. |
+| `marks` | `boolean` | `false` | Emit a stable `m` mark per user-rule alt, enabling `@<rule>:o\|c:<mark>` user-action references. |
+| `wordKeywords` | `boolean` | `false` | Treat word-like literals as whole-word keywords, so `"option"` does not match the prefix of `optional`. For tokenised, keyword-rich languages; leave off for char-level grammars. |
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { ebnfConvert } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon, { charAsNumber: true })
-j.parse("'A'") // => 65
+const spec = ebnfConvert('A ::= "x"\nB ::= "y"', { start: 'B' })
+spec.rule.__start__.open[0].p // => 'B'
 ```
 
-### `enumTag`
+## Plugin form
 
-- **Type:** `null | string`
-- **Default:** `null`
-- **Effect:** Controls how enum-literal *values* (a bare `.foo` used in
-  value position) are represented.
-  - `null` — the enum literal becomes the bare identifier string.
-    `.red` → `'red'`.
-  - a string `T` — the enum literal is wrapped in a one-key object
-    `{ [T]: name }`, so it can be distinguished from an ordinary
-    string. With `enumTag: '$enum'`, `.red` → `{ $enum: 'red' }`.
+### `ebnf` (tabnas Plugin)
 
-The tag affects enum literals only when they are *values*. A `.field`
-used as a key (before `=`) is always the plain field name regardless of
-`enumTag`.
+Install with `new Tabnas({ plugins: [ebnf] })` or `tn.use(ebnf)`. Adds a
+callable `ebnf` member to the instance.
+
+#### `tn.ebnf(src, opts?) => GrammarSpec`
+
+Convert `src` and install the resulting grammar on `tn`, returning the
+spec.
 
 ```js
-import { Tabnas } from '@tabnas/parser'
-import { jsonic } from '@tabnas/jsonic'
-import { Zon } from '@tabnas/zon'
+const { Tabnas } = require('@tabnas/parser')
+const { ebnf } = require('@tabnas/ebnf')
 
-const j = new Tabnas().use(jsonic).use(Zon, { enumTag: '$enum' })
-j.parse('.{ .kind = .red, .label = "red" }') // => { kind: { $enum: 'red' }, label: 'red' }
+const tn = new Tabnas({ plugins: [ebnf] })
+tn.ebnf('Greet ::= "hi"')
+
+tn.parse('hi').rule // => 'Greet'
 ```
 
-## ZON syntax
+#### `tn.ebnf.toSpec(src, opts?) => GrammarSpec`
 
-ZON is **not** a superset of JSON. It uses Zig anonymous-struct
-syntax. The plugin disables the bare `{`, `[`, `]` openers and rebinds
-the key/value separator to `=`.
+Convert without installing.
 
-### Structs (maps)
+### `VERSION`
 
-A struct literal opens with `.{`, contains `.field = value` pairs
-separated by commas, and closes with `}`. Field names are identifiers
-(`[A-Za-z_][A-Za-z0-9_]*`), written with a leading dot that is
-stripped from the key. A name that is not a legal identifier is written
-`.@"..."` — any string literal, with the same escapes — and a struct may
-not repeat a field name.
-
-```
-.{ .a = 1, .b = 2 }     => { a: 1, b: 2 }
-.{ .a = .{ .b = 1 } }   => { a: { b: 1 } }
-.{ .@"a b" = 1 }        => { 'a b': 1 }
-.{ .a = 1, .a = 2 }     => error: duplicate struct field name
-```
-
-### Tuples (lists)
-
-A tuple literal also opens with `.{`, but contains bare values (no
-`.field =`), separated by commas, and closes with `}`. It produces an
-array.
-
-```
-.{ 1, 2, 3 }            => [1, 2, 3]
-.{ "a", "b" }           => ['a', 'b']
-.{ .{ 1, 2 }, .{ 3, 4 } } => [[1, 2], [3, 4]]
-```
-
-The struct-vs-tuple decision is made at lex time by peeking past the
-`.{`: if the next significant token is a field name (`.identifier` or
-`.@"..."`) followed by `=`, it is a struct; otherwise it is a tuple.
-
-### Empty literal
-
-An empty `.{}` parses as an **empty array** (`[]`), since with no
-contents there is no `.field =` to mark it as a struct.
-
-```
-.{}                     => []
-```
-
-### Trailing commas
-
-A trailing comma before `}` is allowed in both structs and tuples.
-
-```
-.{ .a = 1, }            => { a: 1 }
-.{ 1, 2, 3, }           => [1, 2, 3]
-```
-
-### Scalars
-
-| Construct | Example | Result |
-|---|---|---|
-| Integer | `42` | `42` |
-| Float | `3.14` | `3.14` |
-| Hex | `0x2a` | `42` |
-| Octal | `0o52` | `42` |
-| Binary | `0b101010` | `42` |
-| Hex float | `0x1.8p1` | `3` |
-| Exponent | `1e5`, `12_3.0E+77` | `100000`, `1.23e+79` |
-| Digit separator | `1_000_000` | `1000000` |
-| Infinity / NaN | `inf`, `-inf`, `nan` | `Infinity`, `-Infinity`, `NaN` |
-| Big integer | `36893488147419103231` | `36893488147419103231n` (a `bigint`) |
-| Boolean | `true`, `false` | `true`, `false` |
-| Null | `null` | `null` |
-| String | `"hello"` | `'hello'` |
-| Enum literal | `.red`, `.@"a b"` | `'red'`, `'a b'` (or `{ tag: ... }`) |
-| Char literal | `'A'` | `'A'` (or `65`) |
-
-### Numbers are Zig numbers, not relaxed-JSON numbers
-
-The plugin replaces jsonic's number lexer with one that implements Zig's
-literal grammar exactly, so ZON's strictness is preserved:
-
-```
-+1      .5      5.      0123      00      -0
-1__0    1_      _1      0x_2A     0X2A    0O52
-0b12    0o18    1abc    1e        0b1.1   0.1.2
-```
-
-are all **rejected**, as the zig compiler rejects them. A leading `-` is a
-negation prefix and may be separated by space (`- 1`); `-nan` is not a
-literal. An integer whose exact value does not fit an IEEE-754 double is
-returned as a `bigint` rather than silently rounded — everything else is a
-`number`.
-
-### Strings
-
-Double-quoted strings only (single quotes are reserved for char
-literals). Zig-flavoured escapes are recognised: `\n`, `\r`, `\t`,
-`\\`, `\"`, `\'`. Unknown escapes are an error.
-
-```
-"hello"                 => 'hello'
-"a\nb"                  => 'a\nb'
-"a\\b"                  => 'a\b'
-```
-
-### Multi-line strings
-
-Consecutive lines beginning with `\\` form one string. Each line
-contributes its text after the `\\`; lines are joined with `\n`. Zig's
-tokenizer lexes the whole run as one token and skips the whitespace
-between the lines, so **blank lines inside the run continue the literal**
-(contributing an empty line) rather than ending it.
-
-```
-\\hello
-\\world                 => 'hello\nworld'
-```
-
-### Character literals
-
-Single-quoted Zig char literals: a single character, or an escape
-`'\n'` `'\r'` `'\t'` `'\\'` `'\''` `'\"'` `'\0'`, a hex escape
-`'\xNN'`, or a Unicode escape `'\u{...}'`. By default the result is a
-one-character string; with `charAsNumber: true` it is the numeric code
-point.
-
-```
-'A'                     => 'A'   (or 65 with charAsNumber)
-'\n'                    => '\n'  (or 10)
-'\u{1F600}'             => '😀'  (or 128512)
-```
-
-### Comments
-
-`//` line comments only. They are discarded. `//!` and `///` are Zig
-**doc** comments, which ZON rejects; `////` (four or more slashes) is an
-ordinary comment again.
-
-```
-.{
-  // a comment
-  .name = "x", // trailing comment
-}                       => { name: 'x' }
-```
-
-(Jsonic's `#` hash comments and `/* */` block comments are disabled by
-the plugin.)
-
-## Tokens
-
-The plugin's lexer produces these tokens (as surfaced in the railroad
-diagram legend):
-
-| Token | Source | Meaning |
-|---|---|---|
-| `#OB` | `.{` | start of a struct (map) |
-| `#OS` | `.{` | start of a tuple (list) |
-| `#CB` | `}` | close of struct or tuple |
-| `#CL` | `=` | key/value separator |
-| `#TX` | `.ident`, `.@"..."` | field name (key) or enum literal (value) |
-| `VAL` | — | a value: number, string, `true`/`false`/`null`, or `.enum` |
-
-`{`, `[`, and `]` are **not** tokens — they are removed, so a bare `{`
-is a syntax error.
-
-## Grammar group tag
-
-Every grammar alternate the plugin adds carries the group tag `zon`.
-Callers can switch the ZON alts off (restoring plain jsonic) via
-`rule.exclude: 'zon'`:
-
-```typescript
-const j = new Tabnas().use(jsonic).use(Zon).options({
-  rule: { exclude: 'zon' },
-})
-```
+This package's version, as a string. Equal to `package.json`'s
+`version`; a test fails the build if the two drift.
 
 ## Errors
 
-A failed parse throws the engine's standard parse error. It carries
-the usual fields — an error `code`, the source location (`row`, `col`,
-`pos`), the offending `src` fragment, and a formatted multi-line
-`message` with a source-context extract. Inputs that are valid jsonic
-but not valid ZON (such as a bare `{` opener) are errors.
+| Class | Raised by | Carries |
+|---|---|---|
+| `EbnfParseError` | this front-end — syntax errors and refused constructs | `.line`, `.column` (where a token was involved), `.cause` |
+| `EbnfCompileError` | `@tabnas/bnf`, wrapped — an IR the compiler cannot lower | `.cause` |
+
+`EbnfCompileError` messages name the offending **rule** rather than a
+source position, because the compiler works on the IR and no longer has
+the text. They are the shared compiler's own wording, with only its
+package prefix restamped to `ebnf:` so that every diagnostic this
+package raises reads the same way.
+
+```js
+const { ebnfConvert } = require('@tabnas/ebnf')
+
+let msg = null
+try { ebnfConvert('A ::= B') } catch (e) { msg = e.message }
+msg // => "ebnf: rule 'A' references unknown rule 'B'"
+```
+
+## The EBNF dialect
+
+**Primary dialect: W3C EBNF**, as defined in
+[XML 1.0 §6 "Notation"](https://www.w3.org/TR/xml/#sec-notation) and
+used by XPath, XQuery, XML Schema and JSONPath. Chosen because it has a
+real published corpus, because every one of its operators has a
+destination in the grammar IR, and because its `[…]` character class
+cannot coexist with ISO/IEC 14977's `[ … ]` optional — the dialect has
+to be a choice, so it is a documented one.
+
+A small set of ISO/IEC 14977 **spellings** is accepted on top, chosen
+because none can collide with the W3C reading. Accepting them does not
+make this an ISO implementation.
+
+### What is and is not supported
+
+#### Supported
+
+| Construct | Syntax | IR |
+|---|---|---|
+| Production | `Symbol ::= expr` | `Production` |
+| Production, ISO spelling | `symbol = expr ;` | `Production` |
+| Alternation | `A \| B` | one alt per branch |
+| Concatenation | `A B` | one `Sequence` |
+| Concatenation, ISO spelling | `A , B` | one `Sequence` (the comma adds nothing) |
+| Grouping | `( A \| B )` | `group` |
+| Optional | `A?` | `opt` |
+| Zero or more | `A*` | `star` |
+| One or more | `A+` | `plus` |
+| Stacked postfix | `(A)*?` | nested — an extension; W3C never stacks them |
+| Literal, double-quoted | `"abc"` | `term`, `caseSensitive: true` |
+| Literal, single-quoted | `'abc'` | `term`, `caseSensitive: true` |
+| Character class, range | `[a-z]` | `regex` |
+| Character class, enumeration | `[abc]`, `[-+]` | `regex` |
+| Character class, negated | `[^<&]` | `regex` |
+| Character class, code points | `[#x20-#x7E]`, `[#x9#xA]` | `regex` |
+| Standalone code point | `#x41` | `term` |
+| Rule reference | a bare `Symbol` | `ref` |
+| Built-in lexer token | `TX`, `NR`, `ST`, `VL` | `token` — an extension from the shared compiler |
+| Comment, W3C | `/* … */` | ignored |
+| Comment, ISO | `(* … *)` | ignored; does **not** nest |
+| Left recursion | `E ::= E "+" T \| T` | rewritten to `E ::= T ( "+" T )*` |
+
+Symbol names match `[A-Za-z_][A-Za-z0-9_.-]*`.
+
+#### Not supported
+
+Each of these raises a named error at conversion time. Nothing in this
+list compiles to an approximation.
+
+| Construct | Example | Why | Error class and wording |
+|---|---|---|---|
+| Subtraction / exception | `A - B` | The IR has no difference operator, and subtracting one language from another is not expressible over the `Element` kinds. Where both sides are single characters, use a negated class. | `EbnfParseError`: `subtraction ('-') … is not supported` |
+| Special sequence | `? … ?` | ISO 14977 leaves the content undefined, so there is nothing to compile. Also catches a `?` with no element in front of it. | `EbnfParseError`: `special sequences ('? … ?') are not supported` |
+| ISO repetition | `{ A }` | `A*` is this dialect's spelling. Supporting one bracket of an ISO pair while the other means something else invites grammars that are ISO everywhere except where they silently are not. | `EbnfParseError`: `ISO 14977 bracket repetition '{ … }' … is not supported` |
+| ISO option | `[ A ]` | `[ … ]` is a character class here. Reported as a stray bracket, because that is what an unmatched `[` is once classes are claimed whole. | `EbnfParseError`: `stray '[' …` |
+| ABNF prefix repetition | `*A`, `1*A` | Repetition is postfix in this dialect. | `EbnfParseError`: `Repetition in this dialect is postfix` |
+| Empty literal | `""` | Matches nothing; W3C EBNF has no epsilon terminal. | `EbnfParseError`: `empty string literal … matches nothing` |
+| Empty or reversed class | `[]`, `[z-a]` | Matches nothing / is malformed. | `EbnfParseError`: `empty character class`, `reversed range` |
+| Code point above U+10FFFF | `#x110000` | Not a Unicode code point. | `EbnfParseError`: `is not a Unicode code point` |
+| Malformed symbol name | `Foo! ::= …` | The lexer's bareword runs to the next delimiter, so an unvalidated name would become a real rule and the typo would surface much later as an unknown reference. | `EbnfParseError`: `is not a valid symbol name` |
+| ISO meta-identifier with spaces | `two words = …` | Names are one token. Falls out as a name-validation or syntax error. | `EbnfParseError` |
+| The same rule defined twice | `A ::= "x"` then `A ::= "y"` | EBNF has no incremental-alternatives operator (ABNF's `=/`); the compiler would silently take one of them. | `EbnfParseError`: `rule 'A' is defined more than once` |
+| Two alternatives that both match nothing | `A ::= "x"? \| "y"?` | The empty input has two derivations; no lookahead distinguishes them. | `EbnfParseError`: `rule 'A' has 2 alternatives that each match nothing` |
+| Reference to an undefined rule | `A ::= B` with no `B` | Nothing to compile. | `EbnfCompileError`: `rule 'A' references unknown rule 'B'` |
+| Purely left-recursive rule | `A ::= A "x"` | No seed alternative to anchor the iteration on. | `EbnfCompileError`: `rule 'A' is purely left-recursive` |
+
+#### Not an error, but not what you may expect
+
+- **Escape sequences in a literal.** W3C EBNF defines none, so `"\n"` is
+  the two characters `\` and `n`, and `"\"` is a one-character literal.
+  Write control characters as `#xA` or `[#xA]`.
+- **A `]` inside a character class.** Classes are claimed whole by a
+  single-line matcher, so the first `]` ends the class. Write a literal
+  `]` as the string `"]"`.
+- **A hyphen inside a name.** `foo-bar` is one symbol; the text matcher
+  consumes the hyphen as part of the name. Only a hyphen that *starts* a
+  token is the subtraction operator, so `A - B` and `A -B` are rejected
+  while `A-B` is a reference to a rule called `A-B`.
+- **Nested `(* … *)` comments.** The first `*)` ends the comment.
+- **Whitespace.** The engine's lexer skips whitespace between tokens, so
+  a char-level rule such as `Name ::= [a-z]+` will join two
+  space-separated words. Spec grammars written for scannerless parsers
+  usually assume the opposite. Use `TX` for whole words.
+- **Not every production becomes a tree node.** The shared compiler
+  folds a rule whose body is a single token segment into its caller, and
+  a left-recursive rule is rewritten before emission. The AST reflects
+  the compiled grammar, not a one-to-one image of the source.
+
+### Bounded lookahead
+
+The tabnas engine is deterministic: it dispatches on bounded,
+grammar-declared lookahead plus a mark/rewind probe that the shared
+compiler synthesises for one specific shape — an optional prefix
+followed by a distinguishing token. It does not backtrack in general.
+
+A grammar that hides its decision behind an unbounded prefix therefore
+**compiles** and then fails on the inputs that need the extra lookahead:
+
+```
+S ::= L "x" | L "y"
+L ::= "a"+
+```
+
+`a x`, `a y` and `a a x` parse; `a a y` does not. The front-end does not
+try to detect this statically, and that is deliberate: the boundary
+depends on the shape *and* on how deeply the input nests, so any check
+sharp enough to catch this grammar also rejects `Expr ::= Term "+" Expr
+| Term`, which works. The one ambiguity that *can* be ruled out soundly
+— two alternatives that both match the empty string — is refused, and
+the rest is left to the compiler's own named errors.
+
+Left-factor by hand:
+
+```
+S ::= L ( "x" | "y" )
+L ::= "a"+
+```
+
+Both shapes are pinned by tests, so this section fails the build rather
+than aging quietly if the compiler's reach changes.
+
+## The meta-grammar
+
+The EBNF notation itself is read by a tabnas grammar (`ebnfRules`) over
+this token vocabulary:
+
+| Token | Matches | Matcher |
+|---|---|---|
+| `#DEF` | `::=` | eager match token |
+| `#DEFE` | `=` | eager match token |
+| `#ALT` `#LP` `#RP` `#STAR` `#PLUS` `#QM` | `\|` `(` `)` `*` `+` `?` | fixed |
+| `#CA` `#SC` | `,` `;` | fixed |
+| `#OS` `#CS` `#OB` `#CB` | `[` `]` `{` `}` | fixed — only ever reached on input that is about to be refused |
+| `#CC` | a complete `[…]` class | eager match token |
+| `#HX` | `#xNN` | eager match token |
+| `#SUB` | `-` at a token start | eager match token |
+| `#CM` | `/* … */`, `(* … *)` | comment matcher / eager match token |
+| `#TX` `#ST` `#ZZ` | bareword, quoted string, end-of-source | engine defaults |
+
+Every match token is *eager* — it fires wherever its pattern matches,
+rather than only where the current rule's token column already expects
+it. That is safe because each pattern starts with a character that has
+exactly one meaning in EBNF: `[` only opens a class, `#` only opens a
+code point, `::=`/`=` only define a production, and a `-` inside a name
+is consumed by the text matcher as part of that name and never reaches a
+position of its own.
