@@ -169,10 +169,17 @@ describe('ebnf', () => {
 
 
     it('maps a negated character class onto a negated regex', () => {
+      // `u` even with no astral member written: a negated class matches
+      // the COMPLEMENT of its members, and that always contains every
+      // astral code point. Without it the matcher would consume one
+      // UTF-16 surrogate rather than one character.
       const g = parseEbnf('A ::= [^<&]')
       assert.deepEqual(g.productions[0].alts[0][0], {
-        kind: 'regex', pattern: '[^\\u003c\\u0026]', flags: '',
+        kind: 'regex', pattern: '[^\\u003c\\u0026]', flags: 'u',
       })
+      const el = g.productions[0].alts[0][0]
+      const m = '\u{1F600}'.match(new RegExp('^' + el.pattern, el.flags))
+      assert.equal(m[0], '\u{1F600}', 'must consume the whole character')
     })
 
 

@@ -693,7 +693,13 @@ function parseCharClass(src: string, tkn: any): EbnfElement {
       .join('') +
     ']'
 
-  return { kind: 'regex', pattern, flags: astral ? 'u' : '' }
+  // Unicode mode follows what the matcher can MATCH, not what was
+  // written. A negated class matches the complement of its members, and
+  // that complement always contains every astral code point — so
+  // `[^<&]` needs `u` just as much as a class with an astral member
+  // does. Without it the matcher consumes one UTF-16 surrogate rather
+  // than one character. Same defect, and same fix, as tabnas/gbnf#1.
+  return { kind: 'regex', pattern, flags: (negated || astral) ? 'u' : '' }
 }
 
 
