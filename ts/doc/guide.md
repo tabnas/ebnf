@@ -175,17 +175,18 @@ msg // => "ebnf: rule 'A' references unknown rule 'B'"
 ## Fix a grammar that compiles but will not parse
 
 The engine is deterministic with bounded lookahead. A grammar that
-defers its decision behind an unbounded prefix compiles, then fails on
-long inputs:
+defers its decision behind an unbounded prefix used to compile and then
+fail on long inputs:
 
 ```
 S ::= L "x" | L "y"
 L ::= "a"+
 ```
 
-`a a y` does not parse: by the time the `y` is visible, the choice
-between the two alternatives is long past. Left-factor by hand so the
-shared prefix is parsed once and the decision happens after it:
+The compiler now left-factors such alternatives automatically, so
+`a a y` parses as written. The factored spelling remains the clearer
+one — the shared prefix is parsed once and the decision happens after
+it:
 
 ```js
 const { Tabnas } = require('@tabnas/parser')

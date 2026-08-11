@@ -779,27 +779,46 @@ describe('ebnf', () => {
 
   describe('the bounded-lookahead limit', () => {
 
-    // These pin the documented limit rather than a feature: the engine
-    // is deterministic with bounded lookahead, so a grammar that defers
-    // its decision behind an unbounded prefix compiles but then fails on
-    // the inputs that need the extra lookahead. If a future compiler
-    // handles these, this test goes red and the docs get updated.
+    // The engine is deterministic with bounded lookahead, so a grammar
+    // that defers its decision behind an unbounded prefix used to
+    // compile but then fail on the inputs that needed the extra
+    // lookahead. The compiler now left-factors such alternatives
+    // automatically — these pin that both spellings parse.
 
-    it('an unbounded shared prefix compiles but does not parse deeply', () => {
+    it('an unbounded shared prefix is left-factored automatically', () => {
       const j = tn.make()
       j.ebnf('S ::= L "x" | L "y"\nL ::= "a"+')
       assert.doesNotThrow(() => j.parse('a x'))
       assert.doesNotThrow(() => j.parse('a y'))
       assert.doesNotThrow(() => j.parse('a a x'))
-      // The `y` branch needs lookahead past an unbounded run of `a`.
-      assert.throws(() => j.parse('a a y'), /unexpected/)
+      // The `y` branch needs a decision past an unbounded run of `a`.
+      assert.doesNotThrow(() => j.parse('a a y'))
     })
 
 
-    it('left-factoring by hand fixes it', () => {
+    it('left-factoring by hand works the same', () => {
       const j = tn.make()
       j.ebnf('S ::= L ( "x" | "y" )\nL ::= "a"+')
       assert.doesNotThrow(() => j.parse('a a a y'))
+    })
+
+
+    // What remains out of reach, pinned so the suite goes red the day
+    // a future compiler handles it (and this section plus the docs
+    // then get rewritten, as happened to the case above). Left
+    // factoring is structural: distinct multi-alternative rules
+    // spelling the same unbounded prefix cannot be merged, and inside
+    // each the continue-vs-exit choice on the last `a` needs sight of
+    // what follows the run — beyond any bounded token lookahead. The
+    // dispatch prefixes decide shallow inputs; deep ones still fail.
+
+    it('a shared prefix behind distinct recursive rules is still the limit', () => {
+      const j = tn.make()
+      j.ebnf('S ::= A "x" | B "y"\nA ::= "a" A | "a"\nB ::= "a" B | "a"')
+      assert.doesNotThrow(() => j.parse('a x'))
+      assert.doesNotThrow(() => j.parse('a y'))
+      assert.throws(() => j.parse('a a x'), /unexpected/)
+      assert.throws(() => j.parse('a a a a a y'), /unexpected/)
     })
 
   })
