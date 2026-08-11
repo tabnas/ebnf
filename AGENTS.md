@@ -105,14 +105,24 @@ Two checks live here because they are sound and cheap:
 
 **There is deliberately no general ambiguity or backtracking check.**
 The engine is deterministic with bounded lookahead plus a probe for one
-optional-prefix shape, and the boundary depends on the grammar shape
-*and* the input depth: `S ::= L "x" | L "y"` with `L ::= "a"+` parses
-`a a x` and fails `a a y`, while `Expr ::= Term "+" Expr | Term` — the
-same "shared leading ref, different continuations" shape — works at any
-depth via probe dispatch. Any static rule sharp enough to reject the
-first also rejects the second. The limit is documented in all four docs
-and pinned by the "bounded-lookahead limit" tests instead, so a change
-in the compiler's reach turns the suite red rather than aging the prose.
+optional-prefix shape, and the shared compiler left-factors a shared
+prefix the dispatcher cannot see past. What remains depends on the
+grammar shape *and* the input depth: `S ::= A "x" | B "y"` with
+`A ::= "a" A | "a"` and `B` likewise fails `a a x` (factoring is
+structural, so two distinct rules spelling the same unbounded prefix
+cannot merge), while both `S ::= L "x" | L "y"` with `L ::= "a"+` and
+`Expr ::= Term "+" Expr | Term` work at any depth — the first by
+factoring, the second by probe dispatch. Any static rule sharp enough to
+reject the first also rejects the others. The limit is documented in
+README.md, `ts/doc/concepts.md`, `ts/doc/guide.md` and
+`ts/doc/reference.md`, and pinned by the "bounded-lookahead limit"
+tests instead, so a change in the compiler's reach turns the suite red
+rather than aging the prose.
+
+When that happens — as it did when left factoring landed — update the
+tests AND all four documents in the same change. The suite pins
+behaviour, not prose: a bare ``` fence carries no assertion, so
+`doc-examples.test.js` cannot catch a stale claim for you.
 
 If you are tempted to add a heuristic here: run it against
 `ts/test/grammar/expr.ebnf` and `json-subset.ebnf` first.

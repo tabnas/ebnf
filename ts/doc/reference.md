@@ -230,31 +230,46 @@ grammar-declared lookahead plus a mark/rewind probe that the shared
 compiler synthesises for one specific shape — an optional prefix
 followed by a distinguishing token. It does not backtrack in general.
 
-A grammar that hides its decision behind an unbounded prefix therefore
-**compiles** and then fails on the inputs that need the extra lookahead:
+A grammar that hides its decision behind an unbounded prefix is the
+classic case:
 
 ```
 S ::= L "x" | L "y"
 L ::= "a"+
 ```
 
-`a x`, `a y` and `a a x` parse; `a a y` does not. The front-end does not
-try to detect this statically, and that is deliberate: the boundary
-depends on the shape *and* on how deeply the input nests, so any check
-sharp enough to catch this grammar also rejects `Expr ::= Term "+" Expr
-| Term`, which works. The one ambiguity that *can* be ruled out soundly
-— two alternatives that both match the empty string — is refused, and
-the rest is left to the compiler's own named errors.
-
-Left-factor by hand:
+The shared compiler left-factors alternatives whose shared prefix the
+dispatcher cannot see past, so this parses `a a y` as written — as does
+the hand-factored spelling:
 
 ```
 S ::= L ( "x" | "y" )
 L ::= "a"+
 ```
 
-Both shapes are pinned by tests, so this section fails the build rather
-than aging quietly if the compiler's reach changes.
+Alternatives separated by a short bounded prefix are deliberately left
+unfactored: the multi-token dispatcher already handles them, and their
+per-alternative identity (collision marks) is preserved.
+
+Factoring is structural, so it cannot merge distinct rules that spell
+the same unbounded prefix — that remains the limit:
+
+```
+S ::= A "x" | B "y"
+A ::= "a" A | "a"
+B ::= "a" B | "a"
+```
+
+`a x` and `a y` parse; `a a x` does not. The front-end does not try to
+detect this statically, and that is deliberate: the boundary depends on
+the shape *and* on how deeply the input nests, so any check sharp enough
+to catch this grammar also rejects `Expr ::= Term "+" Expr | Term`,
+which works. The one ambiguity that *can* be ruled out soundly — two
+alternatives that both match the empty string — is refused, and the rest
+is left to the compiler's own named errors.
+
+All three shapes are pinned by tests, so this section fails the build
+rather than aging quietly if the compiler's reach changes.
 
 ## The meta-grammar
 

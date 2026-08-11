@@ -33,11 +33,10 @@ that grammar and builds a `{rule, src, kids}` AST.
 >   optional three-element sequence.
 > - **Grammars that need general backtracking do not work.** The tabnas
 >   engine is deterministic, with bounded grammar-declared lookahead
->   plus a mark/rewind probe for one specific optional-prefix shape. A
->   grammar that hides its decision behind an unbounded prefix compiles
->   and then fails on the inputs that need the extra lookahead — see
->   [Bounded lookahead](#bounded-lookahead) for what that looks like and
->   how to left-factor around it.
+>   plus a mark/rewind probe for one specific optional-prefix shape. The
+>   shared compiler left-factors a shared prefix the dispatcher cannot
+>   see past, which covers the common case; what is left over still
+>   fails — see [Bounded lookahead](#bounded-lookahead).
 >
 > The full itemised list is in
 > [ts/doc/reference.md](ts/doc/reference.md#what-is-and-is-not-supported)
@@ -328,16 +327,39 @@ probe that the shared compiler synthesises for one specific shape — an
 optional prefix followed by a distinguishing token. It does not
 backtrack in general.
 
-So a grammar that defers its decision behind an unbounded prefix
-compiles without complaint and then fails on the inputs that need the
-extra lookahead:
+A grammar that defers its decision behind an unbounded prefix is the
+classic case:
 
 ```
 S ::= L "x" | L "y"
 L ::= "a"+
 ```
 
-`a x`, `a y` and `a a x` parse; `a a y` does not. **There is no static
+The classical remedy is left-factoring, so the shared prefix is parsed
+once and the choice happens after it:
+
+```
+S ::= L ( "x" | "y" )
+L ::= "a"+
+```
+
+The shared compiler now performs that transformation itself, so **both
+spellings parse `a a y`**. Alternatives a short bounded prefix already
+separates are left alone — the multi-token dispatcher handles those,
+and leaving them untouched preserves the per-alternative identity that
+collision marks and actions depend on.
+
+What is still out of reach is a decision bounded lookahead cannot make
+even after factoring. Factoring is structural, so distinct rules
+spelling the same unbounded prefix cannot be merged:
+
+```
+S ::= A "x" | B "y"
+A ::= "a" A | "a"
+B ::= "a" B | "a"
+```
+
+Here `a x` and `a y` parse and `a a x` does not. **There is no static
 check for this in the front-end, and adding one would be dishonest:**
 the boundary depends on the shape *and* on how deep the input nests, so
 any rule sharp enough to catch this grammar also rejects `Expr ::= Term
@@ -346,18 +368,11 @@ the one case it can rule out soundly — two alternatives that both match
 the empty string — and leave the rest to the compiler's own named
 errors.
 
-The fix is left-factoring, by hand, at the point the notation makes it
-obvious:
-
-```
-S ::= L ( "x" | "y" )
-L ::= "a"+
-```
-
-Both shapes are pinned by tests
+All three shapes are pinned by tests
 ([`ts/test/ebnf.test.js`](ts/test/ebnf.test.js), "the bounded-lookahead
-limit"), so if a future compiler handles the first one, the suite goes
-red and this section gets rewritten rather than quietly aging.
+limit"): the two that parse and the one that does not. If a future
+compiler handles the last one, the suite goes red and this section gets
+rewritten rather than quietly aging.
 
 ## How it fits together
 
