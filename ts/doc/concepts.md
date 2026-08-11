@@ -109,24 +109,31 @@ L ::= "a"+
 
 `S` must commit to an alternative before running `L`, but nothing
 distinguishes them until after an arbitrarily long run of `a`. The
-grammar compiles; `a a y` does not parse.
-
-The honest version of that limitation is the one stated above, not "the
-engine is LL(1)" (it is not — see `Expr ::= Term "+" Expr | Term`, which
-works via probe dispatch) and not a static rejection rule. This package
-deliberately does **not** try to detect the class statically: the
-boundary depends on both the grammar shape and the input depth, so a
-check sharp enough to catch the example above also rejects the standard
-expression grammar. Instead it refuses the one ambiguity it can rule out
-soundly — two alternatives that both match the empty string, which makes
-the *grammar* ambiguous rather than merely hard — and leaves the rest to
-be visible in the tests that pin it.
-
-The remedy is left-factoring, which the notation makes easy to see:
+classical remedy is left-factoring — parse the shared prefix once and
+decide after it:
 
 ```
 S ::= L ( "x" | "y" )
 ```
+
+The shared compiler now applies that transformation itself: consecutive
+alternatives sharing a leading prefix the dispatcher cannot see past
+are factored into a common prefix and a transparent decision helper, so
+both spellings above parse `a a y`. Alternatives a short bounded prefix
+already separates are left alone — the multi-token dispatch handles
+them, and their per-alternative identity (collision marks) survives.
+
+What remains genuinely out of reach is a decision that bounded
+lookahead cannot make even after factoring — alternatives that differ
+only in ways no finite token prefix reveals. The honest version of the
+limitation is that, not "the engine is LL(1)" (it is not — see
+`Expr ::= Term "+" Expr | Term`, which works via probe dispatch) and
+not a static rejection rule. This package deliberately does **not** try
+to detect the class statically: the boundary depends on both the
+grammar shape and the input depth. Instead it refuses the one ambiguity
+it can rule out soundly — two alternatives that both match the empty
+string, which makes the *grammar* ambiguous rather than merely hard —
+and leaves the rest to be visible in the tests that pin it.
 
 ## Front-end, not compiler
 

@@ -779,24 +779,24 @@ describe('ebnf', () => {
 
   describe('the bounded-lookahead limit', () => {
 
-    // These pin the documented limit rather than a feature: the engine
-    // is deterministic with bounded lookahead, so a grammar that defers
-    // its decision behind an unbounded prefix compiles but then fails on
-    // the inputs that need the extra lookahead. If a future compiler
-    // handles these, this test goes red and the docs get updated.
+    // The engine is deterministic with bounded lookahead, so a grammar
+    // that defers its decision behind an unbounded prefix used to
+    // compile but then fail on the inputs that needed the extra
+    // lookahead. The compiler now left-factors such alternatives
+    // automatically — these pin that both spellings parse.
 
-    it('an unbounded shared prefix compiles but does not parse deeply', () => {
+    it('an unbounded shared prefix is left-factored automatically', () => {
       const j = tn.make()
       j.ebnf('S ::= L "x" | L "y"\nL ::= "a"+')
       assert.doesNotThrow(() => j.parse('a x'))
       assert.doesNotThrow(() => j.parse('a y'))
       assert.doesNotThrow(() => j.parse('a a x'))
-      // The `y` branch needs lookahead past an unbounded run of `a`.
-      assert.throws(() => j.parse('a a y'), /unexpected/)
+      // The `y` branch needs a decision past an unbounded run of `a`.
+      assert.doesNotThrow(() => j.parse('a a y'))
     })
 
 
-    it('left-factoring by hand fixes it', () => {
+    it('left-factoring by hand works the same', () => {
       const j = tn.make()
       j.ebnf('S ::= L ( "x" | "y" )\nL ::= "a"+')
       assert.doesNotThrow(() => j.parse('a a a y'))
