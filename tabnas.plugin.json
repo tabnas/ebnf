@@ -1,0 +1,15 @@
+{
+  "$schema": "https://tabnas.dev/schema/plugin.schema.json",
+  "name": "@tabnas/ebnf",
+  "go": "github.com/tabnas/ebnf/go",
+  "description": "EBNF grammar compiler for the tabnas engine (W3C dialect, best effort).",
+  "base": "@tabnas/bnf",
+  "engine": "@tabnas/parser",
+  "extensions": [
+    ".ebnf"
+  ],
+  "errorCodes": [],
+  "docs": "https://tabnas.dev/docs/packages",
+  "repository": "https://github.com/tabnas/ebnf",
+  "versionSource": "ts/package.json"
+}
