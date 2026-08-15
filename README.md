@@ -396,7 +396,7 @@ there.
 | Path | Description |
 |---|---|
 | [`ts/`](ts/) | TypeScript / JavaScript (`@tabnas/ebnf`). |
-| [`go/`](go/) | Go port — not yet written. |
+| [`go/`](go/) | Go port (`github.com/tabnas/ebnf/go`). |
 
 ## Documentation
 

@@ -55,7 +55,7 @@ quietly dropped from the tests.
 | [`ts/test/doc-examples.test.js`](ts/test/doc-examples.test.js) | Runs every ```js fence carrying a `// =>` assertion in the README and `ts/doc`. Shared harness, identical across tabnas repos. |
 | [`ts/test/version.test.js`](ts/test/version.test.js) | `VERSION` vs `package.json` "version". |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs. |
-| [`go/`](go/) | Go port — **not yet written**. The scaffold's zon sources were removed; `go/doc/` and the remaining `*_test.go` files are stale and will be rewritten with the port. |
+| [`go/`](go/) | Go port of `ts/`, shipped in v0.1.2. `go/facade.go` exports `Ebnf`, `ToSpec`, `EliminateLeftRecursion` and `Install`, plus `ParseError` / `CompileError`; `go/ebnf.go` holds `VERSION`, which `go/version_test.go` pins against `ts/package.json`. Four-quadrant docs in [`go/doc/`](go/doc/). |
 
 ## How the meta-grammar reads EBNF
 
@@ -188,24 +188,26 @@ The commands that prove a change is correct. Run them from the repo root
 unless stated:
 
 ```bash
-make build && make test      # TypeScript — the whole check today
+make build && make test      # both runtimes
 ```
 
-or, equivalently, when iterating:
+or, equivalently, when iterating on one of them:
 
 ```bash
 (cd ts && npm run build && npm test)   # build first: the tests run against dist/
+(cd go && go build ./... && go test ./...)
 ```
 
-The subshell builds before testing on purpose: `npm test` runs
+The TypeScript subshell builds before testing on purpose: `npm test` runs
 `test/**/*.test.js` against the compiled `dist/` and does **not** compile —
 run it alone on a fresh checkout and it either fails for want of `dist/` or
 silently passes against stale output.
 
-There is nothing to verify under `go/`: the Makefile has no Go targets
-because the Go port is not yet written, and the files remaining there are
-stale scaffold (see the repository map). Do not treat a green `go test`
-over them as evidence of anything.
+`go test ./...` under `go/` IS evidence: it is the same command CI runs, on
+every push, on Linux and macOS. This section used to say the opposite — that
+the port was unwritten and a green `go test` meant nothing — which was the
+most damaging sentence in this file, because it trained a reader to ignore
+the one check that catches a port regression.
 
 What "correct" means here, in order of authority:
 
