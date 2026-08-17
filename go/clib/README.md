@@ -64,6 +64,10 @@ const c = @cImport(@cInclude("tabnas.h"));
 // c.tabnas_free.
 ```
 
+## Format notes
+
+EBNF validation is accept/reject only, and `ParseEbnf` drives a package-global singleton parser — every handle in this process serializes on one shared lock, so extra handles buy no concurrency.
+
 ## Layout
 
 - `core.go` — the behaviour, in plain Go (testable).
