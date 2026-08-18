@@ -1,8 +1,9 @@
 # Build and test both implementations. ts/ is canonical; go/ is a port of it.
 #
-# Local build/test resolve the unpublished @tabnas siblings via the
-# repo-set node_modules symlinks (@tabnas/bnf is a file: dependency on
-# ../../bnf/ts).
+# Local build/test resolve the unpublished @tabnas siblings via
+# node_modules symlinks written by admin/scripts/link.sh. The declared
+# dependency is an ordinary `*` version range, so without that script a
+# plain `npm install` gets the published package instead.
 #
 # CI has built and tested go/ since the port landed — the shared
 # polyglot-ci.yml caller detects go/ and runs a Go job per platform. Only this

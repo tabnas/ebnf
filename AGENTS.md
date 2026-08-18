@@ -173,14 +173,19 @@ If you are tempted to add a heuristic here: run it against
 
 ```bash
 cd ts
-npm install     # links @tabnas/bnf from ../../bnf/ts
+npm install     # installs the published @tabnas/bnf
 npm run build   # tsc --build src
 npm test        # node --test test/**/*.test.js
 ```
 
-The `@tabnas/bnf` devDependency is a `file:` path into the sibling
-checkout. In an isolated clone that path dangles; install the published
-version instead.
+`@tabnas/bnf` is declared as an ordinary `*` devDependency, so a plain
+`npm install` fetches the published package and an isolated clone works
+with no extra steps. To build against an UNPUBLISHED sibling checkout
+instead, run `admin/scripts/link.sh`, which replaces
+`ts/node_modules/@tabnas/bnf` with a symlink to `../../bnf/ts` (and
+generates a `go.work` for the Go side) without editing any tracked file.
+Remember that the suites run against `dist/`, so the sibling has to be
+rebuilt for a change there to be visible here.
 
 ## Verify your work
 
