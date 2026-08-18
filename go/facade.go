@@ -84,15 +84,23 @@ func emitSafely(
 	defer func() {
 		if r := recover(); r != nil {
 			msg := ""
+			// The panicked value is kept as the cause, not just its
+			// text: the compiler raises the purely-left-recursive
+			// rejection as a *bnf.EmitError so the SPAN survives the
+			// panic, and stringifying here would discard it at the
+			// last step. With the cause attached, `errors.As` recovers
+			// the range on this path exactly as on the return path
+			// below.
+			var cause error
 			switch v := r.(type) {
 			case error:
-				msg = v.Error()
+				msg, cause = v.Error(), v
 			case string:
 				msg = v
 			default:
 				panic(r)
 			}
-			err = &CompileError{Message: restamp(msg)}
+			err = &CompileError{Message: restamp(msg), Cause: cause}
 		}
 	}()
 	spec, err = bnf.EmitGrammarSpec(g, opts)
