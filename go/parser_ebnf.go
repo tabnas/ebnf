@@ -92,6 +92,47 @@ func (s *scanner) has(lit string) bool {
 	return strings.HasPrefix(s.src[s.i:], lit)
 }
 
+// ---- Source spans --------------------------------------------------
+//
+// Where each IR node came from in the source, so a compile failure can
+// carry a range and a tool can underline the offending text (see
+// bnf.SrcSpan). A srcMark is the scanner's position at the START of a
+// node; spanFrom pairs it with the position once the node has been
+// consumed. That is the whole mechanism — a node's span is the stretch
+// of source the scanner walked to build it, so `src[Sp.S:Sp.E]` is that
+// node's text and nothing else.
+//
+// This is one more place the two front-ends necessarily differ (see the
+// divergence note at the top of this file). The TypeScript front-end is
+// a rule table, so it copies `sI`/`rI`/`cI` straight off the matched
+// TOKEN; this one has no tokens, so it reads the scanner's own counters
+// instead. The two agree on the part the IR contract cares about —
+// WHICH text each node spans: a string terminal covers its quotes, a
+// group covers `(` through `)`, a production covers its name alone.
+//
+// UNITS are runtime-native and deliberately unconverted, exactly as
+// bnf.SrcSpan specifies: these offsets count BYTES where TypeScript's
+// count UTF-16 code units. Note that C counts bytes too, because
+// `advance` steps one byte at a time — that is a PRE-EXISTING
+// divergence from the TS column (which counts UTF-16 units), shared
+// with the Line/Column this scanner already reports on ParseError, and
+// deliberately not changed here.
+type srcMark struct {
+	i    int
+	line int
+	col  int
+}
+
+// mark records where a node starts, before the scanner consumes it.
+func (s *scanner) mark() srcMark {
+	return srcMark{i: s.i, line: s.line, col: s.col}
+}
+
+// spanFrom is the span from a mark to wherever the scanner has reached.
+func (s *scanner) spanFrom(m srcMark) *bnf.SrcSpan {
+	return &bnf.SrcSpan{S: m.i, E: s.i, R: m.line, C: m.col}
+}
+
 func (s *scanner) errf(format string, args ...any) *ParseError {
 	return &ParseError{
 		Message: fmt.Sprintf("ebnf: "+format, args...) +
@@ -174,7 +215,8 @@ func classEscape(cp rune, astral bool) string {
 // members is a literal hyphen (W3C grammars rely on this for `[-+]`),
 // and members are read by code point rather than by UTF-16 unit.
 func (s *scanner) parseCharClass() (*bnf.Element, error) {
-	start := s.i
+	m := s.mark()
+	start := m.i
 	s.advance(1) // consume `[`
 	negated := false
 	if s.peek() == '^' {
@@ -282,7 +324,12 @@ func (s *scanner) parseCharClass() (*bnf.Element, error) {
 	if negated || astral {
 		flags = "u"
 	}
-	return &bnf.Element{Kind: bnf.KindRegex, Pattern: b.String(), Flags: flags}, nil
+	// The whole class as written, `[` through `]` — `whole` above is the
+	// same text, which is what the diagnostics here quote.
+	return &bnf.Element{
+		Kind: bnf.KindRegex, Pattern: b.String(), Flags: flags,
+		Sp: s.spanFrom(m),
+	}, nil
 }
 
 func isHexDigit(c byte) bool {
@@ -344,6 +391,10 @@ func (s *scanner) parseAtom() (*bnf.Element, error) {
 		return nil, s.errf("expected an expression")
 	}
 	c := s.peek()
+	// Where this atom starts, leading space and comments already behind
+	// us. Every span below runs from here to wherever the scanner has
+	// reached once the atom has been consumed.
+	m := s.mark()
 
 	switch {
 	case c == '"' || c == '\'':
@@ -363,9 +414,14 @@ func (s *scanner) parseAtom() (*bnf.Element, error) {
 				"notation has no epsilon terminal")
 		}
 		// W3C literals are case-SENSITIVE — the opposite of RFC 5234.
+		//
+		// The span covers the QUOTES as well as the literal, matching TS:
+		// what the author wrote is `"hi"`, and that is what a diagnostic
+		// should underline. `lit` deliberately does not.
 		return &bnf.Element{
 			Kind: bnf.KindTerm, Literal: lit,
 			CaseSensitive: true, HasCaseSens: true,
+			Sp: s.spanFrom(m),
 		}, nil
 
 	case c == '[':
@@ -384,7 +440,12 @@ func (s *scanner) parseAtom() (*bnf.Element, error) {
 			return nil, s.errf("unclosed group '('")
 		}
 		s.advance(1)
-		return &bnf.Element{Kind: bnf.KindGroup, Alts: alts}, nil
+		// The opening paren through the closing one — TS's `spanTo(lp,
+		// rp)`. The elements inside carry their own, narrower spans.
+		return &bnf.Element{
+			Kind: bnf.KindGroup, Alts: alts,
+			Sp: s.spanFrom(m),
+		}, nil
 
 	case c == '#':
 		if !s.has("#x") {
@@ -403,9 +464,11 @@ func (s *scanner) parseAtom() (*bnf.Element, error) {
 		if err != nil {
 			return nil, err
 		}
+		// `#x41` as written, not the single character it denotes.
 		return &bnf.Element{
 			Kind: bnf.KindTerm, Literal: string(cp),
 			CaseSensitive: true, HasCaseSens: true,
+			Sp: s.spanFrom(m),
 		}, nil
 
 	case c == '?':
@@ -430,7 +493,7 @@ func (s *scanner) parseAtom() (*bnf.Element, error) {
 		if !validName(name) {
 			return nil, s.errf("'%s' is not a valid symbol name", name)
 		}
-		return &bnf.Element{Kind: bnf.KindRef, Name: name}, nil
+		return &bnf.Element{Kind: bnf.KindRef, Name: name, Sp: s.spanFrom(m)}, nil
 	}
 }
 
@@ -441,6 +504,13 @@ func isNameByte(c byte) bool {
 
 // parseElem reads an atom plus any run of postfix operators, applied
 // left to right so `(x)*?` is `((x)*)?` — outermost last, matching TS.
+//
+// The wrappers below carry NO span, deliberately: the TS front-end
+// stamps its five atom kinds and nothing else, and the two ports have
+// to agree on which nodes carry spans, not just on their extents. The
+// atom inside keeps its own span, so `A*` still locates `A`. If these
+// should span the operator too, that is a change to make in TypeScript
+// first — it is canonical here.
 func (s *scanner) parseElem() (*bnf.Element, error) {
 	el, err := s.parseAtom()
 	if err != nil {
@@ -561,7 +631,8 @@ func ParseEbnf(src string) (*bnf.Grammar, error) {
 		if s.eof() {
 			break
 		}
-		start := s.i
+		m := s.mark()
+		start := m.i
 		for !s.eof() && isNameByte(s.peek()) {
 			s.advance(1)
 		}
@@ -569,6 +640,13 @@ func ParseEbnf(src string) (*bnf.Grammar, error) {
 			return nil, s.errf("expected a rule name")
 		}
 		name := s.src[start:s.i]
+		// The production's span is its NAME, taken here while the scanner
+		// still sits at the end of it. A rule's body can run over many
+		// lines, and every consumer of this span — an outline entry,
+		// go-to-definition, the underline on a whole-rule diagnostic like
+		// "purely left-recursive" — wants the name, not the paragraph.
+		// Element spans already locate everything inside. Matches TS.
+		nameSp := s.spanFrom(m)
 		if !validName(name) {
 			return nil, s.errf("'%s' is not a valid symbol name", name)
 		}
@@ -588,7 +666,7 @@ func ParseEbnf(src string) (*bnf.Grammar, error) {
 		if err != nil {
 			return nil, err
 		}
-		prods = append(prods, &bnf.Production{Name: name, Alts: alts})
+		prods = append(prods, &bnf.Production{Name: name, Alts: alts, Sp: nameSp})
 
 		// ISO's `;` terminator is optional and carries no meaning here.
 		if err := s.skipSpace(); err != nil {

@@ -58,6 +58,7 @@ import {
 
 import type {
   ConvertOptions,
+  SrcSpan,
   Element,
   Sequence,
   Production,
@@ -185,6 +186,7 @@ const ebnfRules: Record<
         s: '#TX #DEFOP',
         a: (r: Rule) => {
           r.u.name = checkName(r.o[0].val, r.o[0])
+          r.u.nameTkn = r.o[0]
         },
         p: 'alts',
       },
@@ -201,7 +203,16 @@ const ebnfRules: Record<
     ],
     bc: (r) => {
       if (r.child && r.child.node !== undefined) {
-        r.node.push({ name: r.u.name, alts: r.child.node })
+        // The production's span is its NAME. A rule's body can run over
+        // many lines, and every consumer of this span — an outline
+        // entry, go-to-definition, the underline on a whole-rule
+        // diagnostic like "purely left-recursive" — wants the name, not
+        // the paragraph. Element spans already locate everything inside.
+        r.node.push({
+          name: r.u.name,
+          alts: r.child.node,
+          sp: spanOf(r.u.nameTkn),
+        })
       }
     },
   },
@@ -304,12 +315,16 @@ const ebnfRules: Record<
       {
         s: '#TX',
         a: (r: Rule) => {
-          r.node = { kind: 'ref', name: checkName(r.o[0].val, r.o[0]) }
+          r.node = {
+            kind: 'ref',
+            name: checkName(r.o[0].val, r.o[0]),
+            sp: spanOf(r.o[0]),
+          }
         },
       },
       {
         s: '#LP',
-        a: (r: Rule) => { r.u.group = true },
+        a: (r: Rule) => { r.u.group = true; r.u.lp = r.o[0] },
         p: 'alts',
       },
       // Named rejections. Reached when one of these tokens turns up
@@ -325,7 +340,11 @@ const ebnfRules: Record<
         s: '#RP',
         c: (r: Rule) => r.u.group,
         a: (r: Rule) => {
-          r.node = { kind: 'group', alts: r.child.node }
+          r.node = {
+            kind: 'group',
+            alts: r.child.node,
+            sp: spanTo(r.u.lp, r.c0),
+          }
         },
       },
       // A group that never closed: report it here, where the opening
@@ -409,6 +428,28 @@ function seqAlts(first = false): any[] {
 function tokenLoc(tkn: any): { line?: number; column?: number } {
   return { line: tkn?.rI, column: tkn?.cI }
 }
+
+// Source span of a token, for the IR (`@tabnas/bnf` SrcSpan). Every
+// field is copied straight off the token: the compiler stores whatever
+// units the front-end's own engine tokens use, precisely so no
+// arithmetic — and so no off-by-one — happens at this boundary.
+function spanOf(tkn: any): SrcSpan | undefined {
+  if (null == tkn || null == tkn.sI) return undefined
+  const len = null != tkn.len ? tkn.len : (tkn.src ? String(tkn.src).length : 0)
+  return { s: tkn.sI, e: tkn.sI + len, r: tkn.rI, c: tkn.cI }
+}
+
+
+// One span covering two tokens — a group runs from its `(` to its `)`.
+// Falls back to whichever end is known when the other is not.
+function spanTo(from: any, to: any): SrcSpan | undefined {
+  const a = spanOf(from)
+  const b = spanOf(to)
+  if (null == a) return b
+  if (null == b) return a
+  return { s: a.s, e: b.e, r: a.r, c: a.c }
+}
+
 
 function at(tkn: any): string {
   const loc = tokenLoc(tkn)
@@ -557,14 +598,17 @@ function stringTerm(tkn: any): EbnfElement {
       tokenLoc(tkn),
     )
   }
-  return { kind: 'term', literal, caseSensitive: true }
+  return { kind: 'term', literal, caseSensitive: true, sp: spanOf(tkn) }
 }
 
 
 // A standalone `#xNN` code point — `Char ::= #x9 | #xA | #xD | …`.
 function hexTerm(src: string, tkn: any): EbnfElement {
   const cp = codePoint(src.slice(2), src, tkn)
-  return { kind: 'term', literal: String.fromCodePoint(cp), caseSensitive: true }
+  return {
+    kind: 'term', literal: String.fromCodePoint(cp), caseSensitive: true,
+    sp: spanOf(tkn),
+  }
 }
 
 
@@ -699,7 +743,10 @@ function parseCharClass(src: string, tkn: any): EbnfElement {
   // `[^<&]` needs `u` just as much as a class with an astral member
   // does. Without it the matcher consumes one UTF-16 surrogate rather
   // than one character. Same defect, and same fix, as tabnas/gbnf#1.
-  return { kind: 'regex', pattern, flags: (negated || astral) ? 'u' : '' }
+  return {
+    kind: 'regex', pattern, flags: (negated || astral) ? 'u' : '',
+    sp: spanOf(tkn),
+  }
 }
 
 

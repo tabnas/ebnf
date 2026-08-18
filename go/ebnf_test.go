@@ -8,6 +8,7 @@
 package ebnf
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -252,6 +253,257 @@ func TestPurelyLeftRecursiveIsAnErrorNotAPanic(t *testing.T) {
 	if !strings.Contains(err.Error(), "left-recursive") {
 		t.Errorf("expected the diagnostic to name the problem, got %q",
 			err.Error())
+	}
+}
+
+// ---- Source spans --------------------------------------------------
+//
+// The front-end records where each element and production came from, so
+// a compile failure can carry a range and a tool can underline the
+// offending text (bnf.SrcSpan). Mirrors ts/test/ebnf.test.js's
+// `describe('source spans')`, over the same grammar.
+//
+// Every assertion below slices the ORIGINAL SOURCE with the span and
+// compares the text. That is the only check worth making: an offset
+// pair that is self-consistent but points at the wrong characters would
+// satisfy any assertion about the numbers themselves.
+//
+// Note the units. These offsets and columns count BYTES, because that
+// is what this scanner natively has; the TS front-end's count UTF-16
+// code units. bnf.SrcSpan specifies exactly that, so the recomputation
+// below is byte-based too — slicing a Go string is already byte-based,
+// which is the point.
+
+// The same grammar the TS spans suite uses, joined with "\n" and with
+// no trailing newline, so the offsets line up construct for construct.
+var spanSrc = strings.Join([]string{
+	`doc ::= item`,
+	`item ::= "hi" | ref | (alt | two)`,
+	`ref ::= [a-z]`,
+	`alt ::= #x41`,
+	`two ::= "z"`,
+}, "\n")
+
+// spanText slices the source with a span — the check that matters.
+func spanText(t *testing.T, sp *bnf.SrcSpan) string {
+	t.Helper()
+	if sp == nil {
+		t.Fatal("expected a span, got none")
+	}
+	if sp.S < 0 || sp.E > len(spanSrc) || sp.S > sp.E {
+		t.Fatalf("span %+v does not lie inside the %d-byte source",
+			*sp, len(spanSrc))
+	}
+	return spanSrc[sp.S:sp.E]
+}
+
+func spanProd(t *testing.T, name string) *bnf.Production {
+	t.Helper()
+	for _, p := range mustParse(t, spanSrc).Productions {
+		if p.Name == name {
+			return p
+		}
+	}
+	t.Fatalf("no production %q", name)
+	return nil
+}
+
+func TestSpansAProductionWithItsName(t *testing.T) {
+	// The name, not the body: that is what an outline entry and
+	// go-to-definition want, and a body can run over many lines.
+	p := spanProd(t, "item")
+	if got := spanText(t, p.Sp); got != "item" {
+		t.Errorf("production span = %q, want %q", got, "item")
+	}
+	// Row and column are 1-based, as this scanner reports them.
+	if p.Sp.R != 2 {
+		t.Errorf("row = %d, want 2", p.Sp.R)
+	}
+	if p.Sp.C != 1 {
+		t.Errorf("column = %d, want 1", p.Sp.C)
+	}
+}
+
+func TestSpansAStringTerminalIncludingItsQuotes(t *testing.T) {
+	el := spanProd(t, "item").Alts[0][0]
+	if got := spanText(t, el.Sp); got != `"hi"` {
+		t.Errorf("term span = %q, want %q", got, `"hi"`)
+	}
+}
+
+func TestSpansARuleReference(t *testing.T) {
+	el := spanProd(t, "item").Alts[1][0]
+	if el.Kind != bnf.KindRef {
+		t.Fatalf("expected a ref, got %v", el.Kind)
+	}
+	if got := spanText(t, el.Sp); got != "ref" {
+		t.Errorf("ref span = %q, want %q", got, "ref")
+	}
+}
+
+func TestSpansAGroupFromOpenParenToCloseParen(t *testing.T) {
+	group := spanProd(t, "item").Alts[2][0]
+	if group.Kind != bnf.KindGroup {
+		t.Fatalf("expected a group, got %v", group.Kind)
+	}
+	if got := spanText(t, group.Sp); got != "(alt | two)" {
+		t.Errorf("group span = %q, want %q", got, "(alt | two)")
+	}
+	// ...and the elements inside carry their own, narrower spans.
+	if got := spanText(t, group.Alts[0][0].Sp); got != "alt" {
+		t.Errorf("first group member span = %q, want %q", got, "alt")
+	}
+	if got := spanText(t, group.Alts[1][0].Sp); got != "two" {
+		t.Errorf("second group member span = %q, want %q", got, "two")
+	}
+}
+
+func TestSpansACharacterClassAndAHexTerminal(t *testing.T) {
+	if got := spanText(t, spanProd(t, "ref").Alts[0][0].Sp); got != "[a-z]" {
+		t.Errorf("class span = %q, want %q", got, "[a-z]")
+	}
+	// The hex terminal spans what was WRITTEN, `#x41`, not the single
+	// character "A" it denotes.
+	if got := spanText(t, spanProd(t, "alt").Alts[0][0].Sp); got != "#x41" {
+		t.Errorf("hex span = %q, want %q", got, "#x41")
+	}
+}
+
+// walkSpanned visits every element under a set of alternatives.
+func walkSpanned(alts []bnf.Sequence, fn func(*bnf.Element)) {
+	var rec func(el *bnf.Element)
+	rec = func(el *bnf.Element) {
+		if el == nil {
+			return
+		}
+		fn(el)
+		rec(el.Inner)
+		walkSpanned(el.Alts, fn)
+	}
+	for _, a := range alts {
+		for _, el := range a {
+			rec(el)
+		}
+	}
+}
+
+// rowColAt recomputes a 1-based row and column from a byte offset, the
+// same units the scanner counts in.
+func rowColAt(src string, off int) (row, col int) {
+	before := src[:off]
+	return strings.Count(before, "\n") + 1,
+		off - (strings.LastIndex(before, "\n") + 1) + 1
+}
+
+func TestSpanRowAndColumnAgreeWithTheOffset(t *testing.T) {
+	// A span whose offset and row/column disagree is worse than no span:
+	// a consumer picking either one gets a different answer. This is the
+	// test that catches the scanner's hand-maintained line/col counters
+	// drifting away from its index — which is why it walks every element
+	// as well as every production, where the TS suite need only check
+	// productions (its positions come from engine tokens, not from
+	// counters this file maintains).
+	check := func(what string, sp *bnf.SrcSpan) {
+		t.Helper()
+		if sp == nil {
+			t.Errorf("%s: expected a span", what)
+			return
+		}
+		row, col := rowColAt(spanSrc, sp.S)
+		if sp.R != row {
+			t.Errorf("%s: row %d disagrees with offset %d (want %d)",
+				what, sp.R, sp.S, row)
+		}
+		if sp.C != col {
+			t.Errorf("%s: column %d disagrees with offset %d (want %d)",
+				what, sp.C, sp.S, col)
+		}
+	}
+	for _, p := range mustParse(t, spanSrc).Productions {
+		check("rule "+p.Name, p.Sp)
+		walkSpanned(p.Alts, func(el *bnf.Element) {
+			// Postfix wrappers carry no span, by design — see parseElem.
+			switch el.Kind {
+			case bnf.KindOpt, bnf.KindStar, bnf.KindPlus, bnf.KindRep:
+				return
+			}
+			check("an element of rule "+p.Name, el.Sp)
+		})
+	}
+}
+
+func TestSpansExcludeLeadingTrivia(t *testing.T) {
+	// A risk this port has and the TS one does not. There, a span comes
+	// off a token the lexer already trimmed; here it comes from a mark,
+	// and the mark is only correct because parseAtom takes it AFTER
+	// skipSpace. Move it one line earlier and every span silently grows
+	// a comment on the front, while still slicing to *something*.
+	src := "A ::= /* c */ \"x\" (* d *) B\nB ::= 'y'"
+	g, err := ParseEbnf(src)
+	if err != nil {
+		t.Fatalf("ParseEbnf failed: %v", err)
+	}
+	want := []string{`"x"`, "B", "'y'"}
+	var got []string
+	for _, p := range g.Productions {
+		walkSpanned(p.Alts, func(el *bnf.Element) {
+			if el.Sp == nil {
+				t.Fatalf("element %v has no span", el.Kind)
+			}
+			got = append(got, src[el.Sp.S:el.Sp.E])
+		})
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d elements %q, want %d", len(got), got, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("element %d span = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSpansDoNotReachTheEmittedGrammar(t *testing.T) {
+	// Spans are metadata: they must not change what the grammar
+	// compiles to. The TS suite checks the serialised spec mentions no
+	// "sp" key; Go's spec is a struct, so the sharper form of the same
+	// question is available — emit twice, once from the spanned IR and
+	// once from the same IR with every span stripped, and require the
+	// two specs to be identical.
+	spec, err := Ebnf(spanSrc, nil)
+	if err != nil {
+		t.Fatalf("Ebnf failed: %v", err)
+	}
+	spanned, err := json.Marshal(spec.Rule)
+	if err != nil {
+		t.Fatalf("marshalling the emitted rules failed: %v", err)
+	}
+	if strings.Contains(strings.ToLower(string(spanned)), `"sp"`) {
+		t.Errorf("a span reached the emitted grammar: %s", spanned)
+	}
+
+	g := mustParse(t, spanSrc)
+	stripSpans(g)
+	bare, err := emitSafely(g, &ConvertOptions{Tag: "ebnf"})
+	if err != nil {
+		t.Fatalf("emitting the span-stripped grammar failed: %v", err)
+	}
+	stripped, err := json.Marshal(bare.Rule)
+	if err != nil {
+		t.Fatalf("marshalling the span-stripped rules failed: %v", err)
+	}
+	if string(spanned) != string(stripped) {
+		t.Errorf("spans changed the emitted grammar\n with spans: %s\n"+
+			" without:    %s", spanned, stripped)
+	}
+}
+
+// stripSpans clears every span in a grammar, so a spanned parse can be
+// compared against what the same grammar used to produce.
+func stripSpans(g *bnf.Grammar) {
+	for _, p := range g.Productions {
+		p.Sp = nil
+		walkSpanned(p.Alts, func(el *bnf.Element) { el.Sp = nil })
 	}
 }
 

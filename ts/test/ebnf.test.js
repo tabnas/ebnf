@@ -43,6 +43,25 @@ function stripActions(alt) {
 }
 
 
+// Strip source spans from an IR value. Most tests here are about the
+// SHAPE the front-end builds, or about two spellings producing the same
+// structure — neither has anything to say about where in the source a
+// node came from, and one of them compares parses of DIFFERENT strings,
+// whose offsets legitimately differ. Spans are asserted on their own.
+const noSpans = (v) => {
+  if (Array.isArray(v)) return v.map(noSpans)
+  if (v && 'object' === typeof v) {
+    const o = {}
+    for (const k of Object.keys(v)) {
+      if ('sp' === k) continue
+      o[k] = noSpans(v[k])
+    }
+    return o
+  }
+  return v
+}
+
+
 describe('ebnf', () => {
 
   describe('converter', () => {
@@ -118,7 +137,7 @@ describe('ebnf', () => {
 
     it('builds terms, refs and sequences', () => {
       const g = parseEbnf('A ::= "x" B\nB ::= "y"')
-      assert.deepEqual(g.productions[0], {
+      assert.deepEqual(noSpans(g.productions[0]), {
         name: 'A',
         alts: [[
           { kind: 'term', literal: 'x', caseSensitive: true },
@@ -162,7 +181,7 @@ describe('ebnf', () => {
 
     it('maps a character class onto a regex element', () => {
       const g = parseEbnf('A ::= [a-z]')
-      assert.deepEqual(g.productions[0].alts[0][0], {
+      assert.deepEqual(noSpans(g.productions[0].alts[0][0]), {
         kind: 'regex', pattern: '[\\u0061-\\u007a]', flags: '',
       })
     })
@@ -174,7 +193,7 @@ describe('ebnf', () => {
       // astral code point. Without it the matcher would consume one
       // UTF-16 surrogate rather than one character.
       const g = parseEbnf('A ::= [^<&]')
-      assert.deepEqual(g.productions[0].alts[0][0], {
+      assert.deepEqual(noSpans(g.productions[0].alts[0][0]), {
         kind: 'regex', pattern: '[^\\u003c\\u0026]', flags: 'u',
       })
       const el = g.productions[0].alts[0][0]
@@ -202,7 +221,7 @@ describe('ebnf', () => {
       // `\uXXXX` only reaches U+FFFF, so an astral endpoint has to be
       // spelled `\u{…}`, which in turn requires the `u` flag.
       const g = parseEbnf('A ::= [#x10000-#x10FFFF]')
-      assert.deepEqual(g.productions[0].alts[0][0], {
+      assert.deepEqual(noSpans(g.productions[0].alts[0][0]), {
         kind: 'regex', pattern: '[\\u{10000}-\\u{10ffff}]', flags: 'u',
       })
     })
@@ -210,7 +229,7 @@ describe('ebnf', () => {
 
     it('maps a standalone #xNN onto a term', () => {
       const g = parseEbnf('A ::= #x41')
-      assert.deepEqual(g.productions[0].alts[0][0], {
+      assert.deepEqual(noSpans(g.productions[0].alts[0][0]), {
         kind: 'term', literal: 'A', caseSensitive: true,
       })
     })
@@ -392,8 +411,8 @@ describe('ebnf', () => {
       // Juxtaposition already means sequence here, so the comma adds
       // nothing to the IR — the two spellings must agree exactly.
       assert.deepEqual(
-        parseEbnf('a ::= "x" , "y"').productions,
-        parseEbnf('a ::= "x" "y"').productions,
+        noSpans(parseEbnf('a ::= "x" , "y"').productions),
+        noSpans(parseEbnf('a ::= "x" "y"').productions),
       )
     })
 
@@ -823,4 +842,98 @@ describe('ebnf', () => {
 
   })
 
+})
+
+
+// Source spans (`@tabnas/bnf` C5). The front-end records where each
+// element and production came from, so a compile failure can carry a
+// range and a tool can underline the offending text.
+//
+// Every assertion below slices the ORIGINAL SOURCE with the span and
+// compares the text. That is the only check worth making: an offset
+// pair that is self-consistent but points at the wrong characters would
+// satisfy any assertion about the numbers themselves.
+describe('source spans', () => {
+  const SRC = [
+    'doc ::= item',
+    'item ::= "hi" | ref | (alt | two)',
+    'ref ::= [a-z]',
+    'alt ::= #x41',
+    'two ::= "z"',
+  ].join('\n')
+
+  const g = () => parseEbnf(SRC)
+  const text = (sp) => {
+    assert.ok(sp, 'expected a span')
+    return SRC.slice(sp.s, sp.e)
+  }
+  const prod = (name) => {
+    const p = g().productions.find((x) => x.name === name)
+    assert.ok(p, `no production ${name}`)
+    return p
+  }
+
+  it('spans a production with its name', () => {
+    // The name, not the body: that is what an outline entry and
+    // go-to-definition want, and a body can run over many lines.
+    assert.equal(text(prod('item').sp), 'item')
+    assert.equal(prod('item').sp.r, 2, 'row is 1-based, as the engine reports')
+    assert.equal(prod('item').sp.c, 1)
+  })
+
+  it('spans a string terminal including its quotes', () => {
+    assert.equal(text(prod('item').alts[0][0].sp), '"hi"')
+  })
+
+  it('spans a rule reference', () => {
+    assert.equal(text(prod('item').alts[1][0].sp), 'ref')
+  })
+
+  it('spans a group from its opening paren to its closing one', () => {
+    const group = prod('item').alts[2][0]
+    assert.equal(group.kind, 'group')
+    assert.equal(text(group.sp), '(alt | two)')
+    // ...and the elements inside carry their own, narrower spans.
+    assert.equal(text(group.alts[0][0].sp), 'alt')
+    assert.equal(text(group.alts[1][0].sp), 'two')
+  })
+
+  it('spans a character class and a hex terminal', () => {
+    assert.equal(text(prod('ref').alts[0][0].sp), '[a-z]')
+    assert.equal(text(prod('alt').alts[0][0].sp), '#x41')
+  })
+
+  it('reports a row and column that agree with the offset', () => {
+    // A span whose offset and row/column disagree is worse than no
+    // span: a consumer picking either one gets a different answer.
+    for (const p of g().productions) {
+      const before = SRC.slice(0, p.sp.s)
+      const row = before.split('\n').length
+      const col = p.sp.s - (before.lastIndexOf('\n') + 1) + 1
+      assert.equal(p.sp.r, row, `${p.name}: row disagrees with offset`)
+      assert.equal(p.sp.c, col, `${p.name}: column disagrees with offset`)
+    }
+  })
+
+  it('gives a compile error a range that underlines the offender', () => {
+    // The whole point of the feature, end to end: a real grammar, a
+    // real compile failure, and a range a tool can pass to an editor
+    // without parsing anything out of the message.
+    const src = 'doc ::= item\nitem ::= missing'
+    assert.throws(() => ebnf(src), (e) => {
+      const sp = e.sp || (e.cause && e.cause.sp)
+      assert.ok(sp, 'compile error carried no range')
+      assert.equal(src.slice(sp.s, sp.e), 'missing',
+        'the range does not cover the unknown reference')
+      assert.equal(sp.r, 2)
+      assert.equal(sp.c, 10)
+      return true
+    })
+  })
+
+  it('does not change the grammar a spanned parse compiles to', () => {
+    // Spans are metadata: they must not reach the emitted GrammarSpec.
+    const spec = JSON.stringify(ebnf(SRC).rule)
+    assert.doesNotMatch(spec, /"sp"/)
+  })
 })
