@@ -173,14 +173,32 @@ If you are tempted to add a heuristic here: run it against
 
 ```bash
 cd ts
-npm install     # links @tabnas/bnf from ../../bnf/ts
+npm install     # installs the published @tabnas/bnf
 npm run build   # tsc --build src
 npm test        # node --test test/**/*.test.js
 ```
 
-The `@tabnas/bnf` devDependency is a `file:` path into the sibling
-checkout. In an isolated clone that path dangles; install the published
-version instead.
+`@tabnas/bnf` is declared as an ordinary `*` devDependency, so a plain
+`npm install` fetches the published package and an isolated clone works
+with no extra steps.
+
+To build against an UNPUBLISHED sibling checkout instead,
+`ts/node_modules/@tabnas/bnf` has to be a symlink to that checkout.
+Across the fleet this is wired by `scripts/link.sh` in the sibling
+`tabnas/admin` checkout — it derives the link graph from each repo's
+`ts/package.json` and `go/go.mod`, and generates a `go.work` for the Go
+side, without editing any tracked file. By hand, from this repo's root:
+
+```bash
+ln -sfn ../../../../bnf/ts ts/node_modules/@tabnas/bnf
+```
+
+Either way the suites run against `dist/`, so the sibling must be
+rebuilt (`cd ../bnf/ts && npm run build`) before a change there is
+visible here. And note that `npm ci`, or deleting `node_modules`,
+replaces the symlink with a registry copy — which fails silently, as a
+suite that still passes while testing the published package rather than
+your change.
 
 ## Verify your work
 
