@@ -169,41 +169,50 @@ The most visible consequence: ZON integers like `42` come back as the
 JavaScript number `42` in TypeScript and as `float64(42)` in Go — Go
 has no separate integer type in the result tree.
 
-### Error codes and positions
+### Error reporting
 
 > **These Go docs were copied from the `zon` repo and still describe ZON
 > in places** — "ZON integers like `42`", "Bare `{` is not a ZON opener",
 > and the value-model section above. Treat anything here that names ZON as
-> unverified for EBNF. This section was one of them, and what it claimed
-> was measured and found false; the rest is being corrected as it is
-> checked rather than rewritten from assumption.
+> unverified for EBNF. This section was one of them; what it claimed was
+> measured, found false, and the underlying difference then repaired.
+
+**There are no error codes to branch on.** This package declares no
+`error`/`hint` catalogue. Diagnostics are `EbnfParseError` /
+`EbnfCompileError` (`ParseError` / `CompileError` in Go), carrying a prose
+`Message` with the `ebnf:` prefix, plus `Line` and `Column`. A caller
+branching on behaviour should match on the type, or on the line and column,
+not on a code — there is no code field.
 
 What was here said a raw control character in a double-quoted string
 reports `unprintable` in TypeScript and `unterminated_string` in Go, and
 that "Both report the failure at the same row/column; only the `Code`
 differs."
 
-Measured 2026-08-19, both halves are wrong, and the truth is worse in one
-case and better in the other:
+Measured 2026-08-19, both halves were wrong — and worse than described:
 
-| input | TypeScript | Go |
-|---|---|---|
-| `g = "a<0x01>b" ;` | **rejects** — `unprintable`, 1:7 | **accepts** |
-| `g = "abc ;` | rejects, 1:**5** | rejects, 1:**11** |
-| `g = ;` | rejects, 1:5 | rejects, 1:5 |
+| input | TypeScript | Go, before | Go, now |
+|---|---|---|---|
+| `g = "a<0x01>b" ;` | rejects, 1:7 | **accepts** | rejects, 1:7 |
+| `g = "abc ;` | rejects, 1:5 | rejects, 1:**11** | rejects, 1:5 |
+| `g = ;` | rejects, 1:5 | rejects, 1:5 | rejects, 1:5 |
 
-The control character is not a code difference at all — it is an
-**accept/reject split**, which is a strictly worse thing to have been
-described as harmless. And the positions differ precisely on the case
-where both *do* reject, which is the opposite of "the same row/column".
+The control character was not a code difference at all. It was an
+**accept/reject split** — a strictly worse thing to have been described as
+harmless — and the positions differed precisely on the input where both
+*did* reject.
 
-These are pinned executably, because a prose claim cannot fail and this one
-did not: `go/divergence_test.go` and `ts/test/divergence.test.js`, each
-naming the other. The third row is a **control**, so a change that moved
-every position could not hide inside the two divergences.
+Both are now **aligned**, per this repo's rule that `ts/` is canonical and
+`go/` tracks it. Go's scanner is hand-written where TypeScript delegates to
+the shared engine lexer, which is why it accepted what the engine rejects;
+it now applies the same boundary (below `0x20`, so space and DEL stay legal
+string body) and reports an unterminated string at the opening quote rather
+than at EOF.
 
-If you branch on the error code, note that this converter surfaces its own
-`ebnf: ... at line N, column M` messages rather than raw jsonic codes.
+Pinned executably in `go/divergence_test.go` and
+`ts/test/divergence.test.js`, each naming the other, with the third row kept
+as a control so a wholesale position change cannot hide inside the two that
+were repaired. A prose claim cannot fail, and this one did not.
 
 ## Accepted vs rejected — edge cases
 

@@ -142,6 +142,22 @@ func (s *scanner) errf(format string, args ...any) *ParseError {
 	}
 }
 
+// errAt is errf reported at a MARK rather than at wherever the scanner has
+// since reached.
+//
+// An unterminated string ends the scan at EOF, so errf pointed a reader at
+// the end of the file rather than at the quote that was never closed —
+// column 11 for `g = "abc ;` where TypeScript says 5. The canonical port
+// underlines what the author wrote wrong; this makes both do that.
+func (s *scanner) errAt(m srcMark, format string, args ...any) *ParseError {
+	return &ParseError{
+		Message: fmt.Sprintf("ebnf: "+format, args...) +
+			fmt.Sprintf(" at line %d, column %d", m.line, m.col),
+		Line:   m.line,
+		Column: m.col,
+	}
+}
+
 // skipSpace consumes whitespace and both comment syntaxes. ISO's
 // `(* … *)` has to be recognised here rather than as a lexer comment
 // definition, because `(` also opens a group — the two only separate on
@@ -402,10 +418,23 @@ func (s *scanner) parseAtom() (*bnf.Element, error) {
 		s.advance(1)
 		start := s.i
 		for !s.eof() && s.peek() != quote {
+			// A raw control character is not string body. TypeScript scans
+			// literals through the shared engine lexer, which rejects these
+			// as `unprintable`; this scanner is hand-written and accepted
+			// them silently, so `g = "a<0x01>b" ;` compiled here and failed
+			// there — an accept/reject split, not a wording difference.
+			//
+			// Below 0x20, matching the canonical port exactly: it accepts
+			// 0x20 (space) and 0x7F (DEL), and rejects everything under
+			// 0x20 including tab, LF and CR. Measured, not assumed.
+			if s.peek() < 0x20 {
+				return nil, s.errf(
+					"unprintable character in string literal")
+			}
 			s.advance(1)
 		}
 		if s.eof() {
-			return nil, s.errf("unterminated string literal")
+			return nil, s.errAt(m, "unterminated string literal")
 		}
 		lit := s.src[start:s.i]
 		s.advance(1)
