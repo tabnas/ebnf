@@ -169,17 +169,41 @@ The most visible consequence: ZON integers like `42` come back as the
 JavaScript number `42` in TypeScript and as `float64(42)` in Go — Go
 has no separate integer type in the result tree.
 
-### Error codes
+### Error codes and positions
 
-A successful parse is identical across runtimes, but (inheriting
-jsonic's documented divergences) a few *failing* inputs map to
-different error **codes** between the two — for example a raw control
-character inside a double-quoted string reports `unprintable` in
-TypeScript and `unterminated_string` in Go. Both report the failure at
-the same row/column; only the `Code` differs. If you branch on the
-error code, account for this. See the jsonic Go
-[differences reference](../../../jsonic/go/doc/differences.md) for the
-full list.
+> **These Go docs were copied from the `zon` repo and still describe ZON
+> in places** — "ZON integers like `42`", "Bare `{` is not a ZON opener",
+> and the value-model section above. Treat anything here that names ZON as
+> unverified for EBNF. This section was one of them, and what it claimed
+> was measured and found false; the rest is being corrected as it is
+> checked rather than rewritten from assumption.
+
+What was here said a raw control character in a double-quoted string
+reports `unprintable` in TypeScript and `unterminated_string` in Go, and
+that "Both report the failure at the same row/column; only the `Code`
+differs."
+
+Measured 2026-08-19, both halves are wrong, and the truth is worse in one
+case and better in the other:
+
+| input | TypeScript | Go |
+|---|---|---|
+| `g = "a<0x01>b" ;` | **rejects** — `unprintable`, 1:7 | **accepts** |
+| `g = "abc ;` | rejects, 1:**5** | rejects, 1:**11** |
+| `g = ;` | rejects, 1:5 | rejects, 1:5 |
+
+The control character is not a code difference at all — it is an
+**accept/reject split**, which is a strictly worse thing to have been
+described as harmless. And the positions differ precisely on the case
+where both *do* reject, which is the opposite of "the same row/column".
+
+These are pinned executably, because a prose claim cannot fail and this one
+did not: `go/divergence_test.go` and `ts/test/divergence.test.js`, each
+naming the other. The third row is a **control**, so a change that moved
+every position could not hide inside the two divergences.
+
+If you branch on the error code, note that this converter surfaces its own
+`ebnf: ... at line N, column M` messages rather than raw jsonic codes.
 
 ## Accepted vs rejected — edge cases
 
