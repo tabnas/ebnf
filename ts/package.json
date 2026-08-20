@@ -21,7 +21,9 @@
     "directory": "ts"
   },
   "scripts": {
+    "pretest": "npm run build",
     "test": "node --enable-source-maps --test test/**/*.test.js",
+    "pretest-some": "npm run build",
     "test-some": "node --enable-source-maps --test-name-pattern=\"$npm_config_pattern\" --test test/**/*.test.js",
     "watch": "tsc --build src -w",
     "build": "tsc --build src",
