@@ -558,3 +558,77 @@ func TestRecoveredPanicKeepsEmitErrorCause(t *testing.T) {
 		t.Errorf("span covers %q, want the production name %q", got, "A")
 	}
 }
+
+// ---- The empty input ------------------------------------------------
+//
+// Mirrors ts/test/ebnf.test.js, "the empty input is decided from the
+// grammar". The engine short-circuits "" before the parse loop starts,
+// so whether it is in the language is settled when the spec is emitted
+// and no rule ever sees it. LexOptions.Empty defaults to true, so
+// leaving it unset made every emitted grammar accept "" — `S ::= "a"`
+// included.
+//
+// This port compiles a spec and never parses input, so the assertion is
+// on the emitted option rather than on accept/reject. That is the half
+// which has to agree with TypeScript.
+
+func TestEmptyInputIsDecidedFromTheGrammar(t *testing.T) {
+	cases := []struct {
+		src   string
+		empty bool
+	}{
+		{`S ::= "a"`, false},
+		{`S ::= "a"+`, false},
+		{`S ::= "a" "b"`, false},
+		{`S ::= ( "a" | "b" )`, false},
+		{`S ::= [a-z]`, false},
+		{`S ::= "a"*`, true},
+		{`S ::= "a"?`, true},
+		{`S ::= "a"* "b"*`, true},
+		{`S ::= ( "a" | "b" )?`, true},
+		// Nullability is a least fixed point over the rules, not a
+		// property of one production read alone: these need more than one
+		// pass, the last of them through rules defined after their use.
+		{"S ::= A\nA ::= B\nB ::= \"a\"*", true},
+		{"S ::= A\nA ::= B\nB ::= \"a\"", false},
+		{"S ::= A B\nA ::= \"x\"?\nB ::= \"y\"?", true},
+		// Recursion is not nullability: every alternative of A consumes an
+		// `a` before reaching the recursion.
+		{"S ::= A \"x\" | B \"y\"\nA ::= \"a\" A | \"a\"\nB ::= \"a\" B | \"a\"", false},
+	}
+
+	for _, c := range cases {
+		spec, err := Ebnf(c.src, nil)
+		if err != nil {
+			t.Errorf("%q: %v", c.src, err)
+			continue
+		}
+		if spec.Options == nil || spec.Options.Lex == nil ||
+			spec.Options.Lex.Empty == nil {
+			t.Errorf("%q: lex.empty was not set at all", c.src)
+			continue
+		}
+		if got := *spec.Options.Lex.Empty; got != c.empty {
+			t.Errorf("%q: lex.empty = %v, want %v", c.src, got, c.empty)
+		}
+	}
+}
+
+// The question is asked of the START rule, so naming a different one
+// changes the answer for the same source.
+func TestEmptyInputFollowsTheStartRule(t *testing.T) {
+	const src = "S ::= \"a\"\nT ::= \"b\"*"
+
+	for _, c := range []struct {
+		start string
+		empty bool
+	}{{"", false}, {"T", true}} {
+		spec, err := Ebnf(src, &ConvertOptions{Start: c.start})
+		if err != nil {
+			t.Fatalf("start %q: %v", c.start, err)
+		}
+		if got := *spec.Options.Lex.Empty; got != c.empty {
+			t.Errorf("start %q: lex.empty = %v, want %v", c.start, got, c.empty)
+		}
+	}
+}

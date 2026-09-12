@@ -738,33 +738,50 @@ func checkDuplicates(prods []*bnf.Production) error {
 // string. No lookahead can separate them, because there is nothing to
 // look at, and the shared compiler emits a dispatch anyway and then
 // mis-parses. This is NOT a general ambiguity check.
-func checkNullableAlts(prods []*bnf.Production) error {
-	nullable := map[string]bool{}
-
-	var elNullable func(el *bnf.Element) bool
-	elNullable = func(el *bnf.Element) bool {
-		switch el.Kind {
-		case bnf.KindOpt, bnf.KindStar:
-			return true
-		case bnf.KindPlus:
-			return elNullable(el.Inner)
-		case bnf.KindRep:
-			return el.Min == 0
-		case bnf.KindGroup:
-			for _, a := range el.Alts {
-				if altNullable(a, elNullable) {
-					return true
-				}
+// elDerivesEmpty reports whether el can match nothing, given the rules
+// already known to derive the empty string.
+func elDerivesEmpty(el *bnf.Element, nullable map[string]bool) bool {
+	switch el.Kind {
+	case bnf.KindOpt, bnf.KindStar:
+		return true
+	case bnf.KindPlus:
+		return elDerivesEmpty(el.Inner, nullable)
+	case bnf.KindRep:
+		// This dialect has no bounded repetition — `{ A }` is refused and
+		// `*` is the spelling — so Rep never reaches here from EBNF source.
+		// Kept because the shared IR type carries it.
+		return el.Min == 0
+	case bnf.KindGroup:
+		for _, a := range el.Alts {
+			if altDerivesEmpty(a, nullable) {
+				return true
 			}
-			return false
-		case bnf.KindRef:
-			return nullable[el.Name]
 		}
 		return false
+	case bnf.KindRef:
+		return nullable[el.Name]
 	}
+	// Term, regex, token and prose all consume at least one character;
+	// an empty literal is refused before the IR.
+	return false
+}
 
-	// Least fixed point: a rule is nullable if any alternative is, and
-	// that can only become true as more rules are found nullable.
+func altDerivesEmpty(a bnf.Sequence, nullable map[string]bool) bool {
+	for _, el := range a {
+		if !elDerivesEmpty(el, nullable) {
+			return false
+		}
+	}
+	return true
+}
+
+// nullableRules returns the rules that derive the empty string.
+//
+// Least fixed point: a rule is nullable if any alternative is, and that
+// can only become true as more rules are found nullable. One pass is not
+// enough because a rule's nullability can depend on a rule defined later.
+func nullableRules(prods []*bnf.Production) map[string]bool {
+	nullable := map[string]bool{}
 	for changed := true; changed; {
 		changed = false
 		for _, p := range prods {
@@ -772,7 +789,7 @@ func checkNullableAlts(prods []*bnf.Production) error {
 				continue
 			}
 			for _, a := range p.Alts {
-				if altNullable(a, elNullable) {
+				if altDerivesEmpty(a, nullable) {
 					nullable[p.Name] = true
 					changed = true
 					break
@@ -780,11 +797,16 @@ func checkNullableAlts(prods []*bnf.Production) error {
 			}
 		}
 	}
+	return nullable
+}
+
+func checkNullableAlts(prods []*bnf.Production) error {
+	nullable := nullableRules(prods)
 
 	count := func(alts []bnf.Sequence) int {
 		n := 0
 		for _, a := range alts {
-			if altNullable(a, elNullable) {
+			if altDerivesEmpty(a, nullable) {
 				n++
 			}
 		}
@@ -835,13 +857,4 @@ func checkNullableAlts(prods []*bnf.Production) error {
 		}
 	}
 	return nil
-}
-
-func altNullable(a bnf.Sequence, elNullable func(*bnf.Element) bool) bool {
-	for _, el := range a {
-		if !elNullable(el) {
-			return false
-		}
-	}
-	return true
 }

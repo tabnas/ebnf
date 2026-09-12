@@ -12,6 +12,7 @@ const {
   ebnfConvert: ebnf,
   toSpec,
   parseEbnf,
+  emitGrammarSpec,
   eliminateLeftRecursion,
   EbnfParseError,
   EbnfCompileError,
@@ -791,6 +792,94 @@ describe('ebnf', () => {
       assert.equal(a.parse('x').rule, 'A')
       assert.equal(b.parse('y').rule, 'B')
       assert.throws(() => a.parse('y'))
+    })
+
+  })
+
+
+  // Whether the empty string is in the language is settled at compile
+  // time, not by the rules: the engine short-circuits `''` before the
+  // parse loop starts, so no rule ever sees it. Left unset, the engine's
+  // default accepted `''` for EVERY grammar — `S ::= "a"` included,
+  // which is plainly wrong and is what these pin.
+  describe('the empty input is decided from the grammar', () => {
+
+    const acceptsEmpty = (src, opts) => {
+      const j = tn.make()
+      j.ebnf(src, opts)
+      try {
+        j.parse('')
+        return true
+      } catch (e) {
+        return false
+      }
+    }
+
+    const REJECT = [
+      'S ::= "a"',
+      'S ::= "a"+',
+      'S ::= "a" "b"',
+      'S ::= ( "a" | "b" )',
+      'S ::= [a-z]',
+    ]
+    for (const src of REJECT) {
+      it(`rejects '' for ${JSON.stringify(src)}`, () => {
+        assert.equal(acceptsEmpty(src), false)
+      })
+    }
+
+    const ACCEPT = [
+      'S ::= "a"*',
+      'S ::= "a"?',
+      'S ::= "a"* "b"*',
+      'S ::= ( "a" | "b" )?',
+    ]
+    for (const src of ACCEPT) {
+      it(`accepts '' for ${JSON.stringify(src)}`, () => {
+        assert.equal(acceptsEmpty(src), true)
+      })
+    }
+
+    // Nullability is a least fixed point over the rules, not a property
+    // of one production read alone. Each of these needs more than a
+    // single pass: the first two reach it through a chain, the third
+    // through rules defined after their use.
+    it('follows nullability through other rules', () => {
+      assert.equal(acceptsEmpty('S ::= A\nA ::= B\nB ::= "a"*'), true)
+      assert.equal(acceptsEmpty('S ::= A\nA ::= B\nB ::= "a"'), false)
+      assert.equal(acceptsEmpty('S ::= A B\nA ::= "x"?\nB ::= "y"?'), true)
+    })
+
+
+    // The question is asked of the START rule, so naming a different one
+    // changes the answer for the same source.
+    it('asks it of the start rule, whichever that is', () => {
+      const src = 'S ::= "a"\nT ::= "b"*'
+      assert.equal(acceptsEmpty(src), false)
+      assert.equal(acceptsEmpty(src, { start: 'T' }), true)
+    })
+
+
+    // A recursive rule is not nullable just because it recurses: every
+    // alternative of `A` consumes an `a` before reaching the recursion.
+    it('a recursive rule that always consumes is not nullable', () => {
+      assert.equal(
+        acceptsEmpty('S ::= A "x" | B "y"\nA ::= "a" A | "a"\nB ::= "a" B | "a"'),
+        false)
+    })
+
+
+    // Both documented pipelines must answer the same way. The two-step
+    // form is in the guide and the reference, and it reaches the shared
+    // emitter directly — so a decision applied only inside `ebnfConvert`
+    // left the two public paths disagreeing about which strings parse.
+    it('the two-step pipeline decides it the same way', () => {
+      for (const [src, empty] of [['S ::= "a"', false], ['S ::= "a"*', true]]) {
+        const oneStep = ebnf(src)
+        const twoStep = emitGrammarSpec(parseEbnf(src))
+        assert.equal(oneStep.options.lex.empty, empty, src)
+        assert.equal(twoStep.options.lex.empty, empty, src + ' (two-step)')
+      }
     })
 
   })
