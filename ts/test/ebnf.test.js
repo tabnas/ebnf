@@ -12,6 +12,7 @@ const {
   ebnfConvert: ebnf,
   toSpec,
   parseEbnf,
+  emitGrammarSpec,
   eliminateLeftRecursion,
   EbnfParseError,
   EbnfCompileError,
@@ -865,6 +866,20 @@ describe('ebnf', () => {
       assert.equal(
         acceptsEmpty('S ::= A "x" | B "y"\nA ::= "a" A | "a"\nB ::= "a" B | "a"'),
         false)
+    })
+
+
+    // Both documented pipelines must answer the same way. The two-step
+    // form is in the guide and the reference, and it reaches the shared
+    // emitter directly — so a decision applied only inside `ebnfConvert`
+    // left the two public paths disagreeing about which strings parse.
+    it('the two-step pipeline decides it the same way', () => {
+      for (const [src, empty] of [['S ::= "a"', false], ['S ::= "a"*', true]]) {
+        const oneStep = ebnf(src)
+        const twoStep = emitGrammarSpec(parseEbnf(src))
+        assert.equal(oneStep.options.lex.empty, empty, src)
+        assert.equal(twoStep.options.lex.empty, empty, src + ' (two-step)')
+      }
     })
 
   })
