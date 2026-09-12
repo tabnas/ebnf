@@ -108,9 +108,11 @@ The engine is deterministic with bounded lookahead plus a probe for one
 optional-prefix shape, and the shared compiler left-factors a shared
 prefix the dispatcher cannot see past. What remains depends on the
 grammar shape *and* the input depth: `S ::= A "x" | B "y"` with
-`A ::= "a" A | "a"` and `B` likewise fails `a a x` (factoring is
-structural, so two distinct rules spelling the same unbounded prefix
-cannot merge), while both `S ::= L "x" | L "y"` with `L ::= "a"+` and
+`A ::= "a" A | "a"` and `B` likewise fails `a a y` but not `a a x`
+(factoring is structural, so two distinct rules spelling the same
+unbounded prefix cannot merge, and which alternative a rule sits behind
+decides how deep it gets), while both `S ::= L "x" | L "y"` with
+`L ::= "a"+` and
 `Expr ::= Term "+" Expr | Term` work at any depth — the first by
 factoring, the second by probe dispatch. Any static rule sharp enough to
 reject the first also rejects the others. The limit is documented in
