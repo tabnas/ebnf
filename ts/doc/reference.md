@@ -29,6 +29,12 @@ instance as `tn.ebnf.toSpec`.
 Throws `EbnfParseError` if the source cannot be read, `EbnfCompileError`
 if it reads but cannot be compiled.
 
+The emitted spec sets `options.lex.empty` from the grammar: the empty
+input parses if and only if the start rule derives the empty string. It
+has to be settled here because the engine short-circuits `''` before the
+parse loop starts, so no rule ever sees it. `S ::= "a"*` accepts `''`;
+`S ::= "a"` rejects it.
+
 ### `parseEbnf(src) => EbnfGrammar`
 
 Parse EBNF source into the grammar IR (`{ productions: [...] }`)

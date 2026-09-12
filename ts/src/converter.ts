@@ -1020,41 +1020,62 @@ function checkDuplicates(prods: EbnfProduction[]): void {
 // mark/rewind probe for one optional-prefix shape, and a grammar that
 // exceeds that fails either in `@tabnas/bnf` (with a named error) or at
 // parse time on the inputs that need the extra lookahead.
-function checkNullableAlts(prods: EbnfProduction[]): void {
-  const nullable = new Set<string>()
-
-  const elNullable = (el: EbnfElement): boolean => {
-    switch (el.kind) {
-      case 'opt':
-      case 'star':
-        return true
-      case 'plus':
-        return elNullable(el.inner)
-      case 'rep':
-        return 0 === el.min
-      case 'group':
-        return el.alts.some((a) => a.every(elNullable))
-      case 'ref':
-        return nullable.has(el.name)
-      default:
-        return false
-    }
+function elDerivesEmpty(el: EbnfElement, nullable: Set<string>): boolean {
+  switch (el.kind) {
+    case 'opt':
+    case 'star':
+      return true
+    case 'plus':
+      return elDerivesEmpty(el.inner, nullable)
+    case 'rep':
+      // This dialect has no bounded repetition — `{ A }` is refused and
+      // `*` is the spelling — so `rep` never reaches here from EBNF
+      // source. Kept because the IR type carries it.
+      return 0 === el.min
+    case 'group':
+      return el.alts.some((a) => altDerivesEmpty(a, nullable))
+    case 'ref':
+      return nullable.has(el.name)
+    default:
+      // term / regex / token / prose all consume at least one
+      // character; an empty literal is refused before the IR.
+      return false
   }
-  const altNullable = (alt: EbnfSequence): boolean => alt.every(elNullable)
+}
 
-  // Least fixed point: a rule is nullable if any alternative is, and
-  // that can only become true as more rules are found nullable.
+
+const altDerivesEmpty = (
+  alt: EbnfSequence,
+  nullable: Set<string>,
+): boolean => alt.every((el) => elDerivesEmpty(el, nullable))
+
+
+// Which rules derive the empty string.
+//
+// Least fixed point: a rule is nullable if any alternative is, and that
+// can only become true as more rules are found nullable. One pass is not
+// enough because a rule's nullability can depend on a rule defined later.
+function nullableRules(prods: EbnfProduction[]): Set<string> {
+  const nullable = new Set<string>()
   let changed = true
   while (changed) {
     changed = false
     for (const p of prods) {
       if (nullable.has(p.name)) continue
-      if (p.alts.some(altNullable)) {
+      if (p.alts.some((a) => altDerivesEmpty(a, nullable))) {
         nullable.add(p.name)
         changed = true
       }
     }
   }
+  return nullable
+}
+
+
+function checkNullableAlts(prods: EbnfProduction[]): void {
+  const nullable = nullableRules(prods)
+  const altNullable = (alt: EbnfSequence): boolean =>
+    altDerivesEmpty(alt, nullable)
 
   const complain = (subject: string, n: number): never => {
     throw new EbnfParseError(
@@ -1102,7 +1123,25 @@ function checkNullableAlts(prods: EbnfProduction[]): void {
 function ebnf(src: string, opts?: EbnfConvertOptions): GrammarSpec {
   const grammar = parseEbnf(src)
   try {
-    return emitGrammarSpec(grammar, { ...opts, tag: opts?.tag ?? 'ebnf' })
+    const spec = emitGrammarSpec(grammar, { ...opts, tag: opts?.tag ?? 'ebnf' })
+
+    // Whether the empty string is in the language is a property of the
+    // grammar, and it has to be answered HERE: the engine short-circuits
+    // `''` before the parse loop starts, so no rule ever sees it. Left
+    // unset, the engine's default accepted `''` for every grammar this
+    // front-end emitted — `S ::= "a"` included.
+    //
+    // The start rule is the first production unless the caller names
+    // one, which is what the shared compiler wraps as `__start__`.
+    const start = opts?.start ?? grammar.productions[0].name
+    const options = (spec.options ?? {}) as Record<string, any>
+    options.lex = {
+      ...(options.lex ?? {}),
+      empty: nullableRules(grammar.productions).has(start),
+    }
+    spec.options = options as GrammarSpec['options']
+
+    return spec
   } catch (e: any) {
     if (e instanceof EbnfParseError) throw e
     // Restamp the shared compiler's package prefix so a caller sees one
