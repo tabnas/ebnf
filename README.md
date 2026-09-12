@@ -359,8 +359,12 @@ A ::= "a" A | "a"
 B ::= "a" B | "a"
 ```
 
-Here `a x` and `a y` parse and `a a x` does not. **There is no static
-check for this in the front-end, and adding one would be dishonest:**
+Here `a x` and `a y` parse, and so does `a a x` — the first
+alternative's rule is decided at any depth. The second is not: `a a y`
+does not parse, though `A` and `B` are the same shape spelled the same
+way. Which alternative a rule sits behind is what decides, so the
+boundary is asymmetric. **There is no static check for this in the
+front-end, and adding one would be dishonest:**
 the boundary depends on the shape *and* on how deep the input nests, so
 any rule sharp enough to catch this grammar also rejects `Expr ::= Term
 "+" Expr | Term`, which works. What the front-end does instead is refuse

@@ -824,19 +824,29 @@ describe('ebnf', () => {
 
     // What remains out of reach, pinned so the suite goes red the day
     // a future compiler handles it (and this section plus the docs
-    // then get rewritten, as happened to the case above). Left
-    // factoring is structural: distinct multi-alternative rules
-    // spelling the same unbounded prefix cannot be merged, and inside
-    // each the continue-vs-exit choice on the last `a` needs sight of
-    // what follows the run — beyond any bounded token lookahead. The
-    // dispatch prefixes decide shallow inputs; deep ones still fail.
+    // then get rewritten, as happened to the case above, and again
+    // below). Left factoring is structural: distinct multi-alternative
+    // rules spelling the same unbounded prefix cannot be merged, and
+    // inside each the continue-vs-exit choice on the last `a` needs
+    // sight of what follows the run — beyond any bounded token
+    // lookahead.
+    //
+    // The limit is now asymmetric, and that is the part worth pinning.
+    // The FIRST alternative's rule is decided at any depth; the second
+    // is still decided only at one `a`. A and B are the same shape,
+    // spelled the same way, so what separates them is which alternative
+    // each sits behind — not anything about the rules themselves.
 
     it('a shared prefix behind distinct recursive rules is still the limit', () => {
       const j = tn.make()
       j.ebnf('S ::= A "x" | B "y"\nA ::= "a" A | "a"\nB ::= "a" B | "a"')
       assert.doesNotThrow(() => j.parse('a x'))
       assert.doesNotThrow(() => j.parse('a y'))
-      assert.throws(() => j.parse('a a x'), /unexpected/)
+      // The first alternative now carries any depth.
+      assert.doesNotThrow(() => j.parse('a a x'))
+      assert.doesNotThrow(() => j.parse('a a a a a x'))
+      // The second still does not, at any depth past one.
+      assert.throws(() => j.parse('a a y'), /unexpected/)
       assert.throws(() => j.parse('a a a a a y'), /unexpected/)
     })
 

@@ -260,8 +260,11 @@ A ::= "a" A | "a"
 B ::= "a" B | "a"
 ```
 
-`a x` and `a y` parse; `a a x` does not. The front-end does not try to
-detect this statically, and that is deliberate: the boundary depends on
+`a x` and `a y` parse, and so does `a a x`: the first alternative's
+rule is decided at any depth. The second is not — `a a y` does not
+parse, though `A` and `B` are the same shape spelled the same way, so
+the boundary is asymmetric. The front-end does not try to detect this
+statically, and that is deliberate: the boundary depends on
 the shape *and* on how deeply the input nests, so any check sharp enough
 to catch this grammar also rejects `Expr ::= Term "+" Expr | Term`,
 which works. The one ambiguity that *can* be ruled out soundly — two
