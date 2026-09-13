@@ -7,8 +7,8 @@
 <!-- /tabnas-badges -->
 
 EBNF grammar compiler for the [tabnas](https://github.com/tabnas/parser)
-parser. Takes EBNF source — the **W3C dialect**, the notation the XML,
-XPath and XQuery specifications publish their grammars in — and emits a
+parser. Takes EBNF source (the **W3C dialect**, the notation the XML,
+XPath and XQuery specifications publish their grammars in) and emits a
 tabnas `GrammarSpec`. Installed on an engine, the spec parses inputs in
 that grammar and builds a `{rule, src, kids}` AST.
 
@@ -17,7 +17,7 @@ that grammar and builds a `{rule, src, kids}` AST.
 > "EBNF" is a family of notations, not a language. This package
 > implements **one dialect properly** and refuses the rest by name. It
 > is not an ISO/IEC 14977 implementation, it is not a universal EBNF
-> reader, and it will not quietly do something plausible with syntax it
+> reader, and it will not silently do something plausible with syntax it
 > does not understand.
 >
 > Concretely, and verified by the test suite rather than asserted:
@@ -36,7 +36,7 @@ that grammar and builds a `{rule, src, kids}` AST.
 >   plus a mark/rewind probe for one specific optional-prefix shape. The
 >   shared compiler left-factors a shared prefix the dispatcher cannot
 >   see past, which covers the common case; what is left over still
->   fails — see [Bounded lookahead](#bounded-lookahead).
+>   fails; see [Bounded lookahead](#bounded-lookahead).
 >
 > The full itemised list is in
 > [ts/doc/reference.md](ts/doc/reference.md#what-is-and-is-not-supported)
@@ -58,7 +58,7 @@ Three reasons it is the primary dialect rather than ISO 14977:
 
 1. **There is a corpus.** XML, XML Namespaces, XPath 1.0–3.1, XQuery,
    XML Schema, JSONPath and a long list of other specifications publish
-   real, load-bearing grammars in exactly this notation. ISO 14977 is
+   real, working grammars in exactly this notation. ISO 14977 is
    widely cited and almost never used verbatim.
 2. **It maps onto the IR.** Postfix `?`/`*`/`+` are the IR's `opt`,
    `star` and `plus`; `( … )` is `group`; `[…]` and `#xNN` are `regex`
@@ -72,7 +72,7 @@ A handful of ISO spellings **are** accepted, chosen because none of them
 can collide with the W3C reading: `=` as a definition operator, `,` as
 an explicit concatenation separator, `;` as a production terminator, and
 `(* … *)` comments. Accepting those spellings does not make this an ISO
-implementation — everything else about ISO 14977, including its
+implementation; everything else about ISO 14977, including its
 bracket operators, its exception operator, its special sequences and its
 space-bearing meta-identifiers, is out.
 
@@ -93,10 +93,10 @@ tn.parse('hi') // => ({ rule: 'Greet', src: 'hi', kids: [] })
 
 Every rule that matches produces one AST node with three fields:
 
-- **`rule`** — the production's name, so you can navigate the tree by
+- **`rule`**. The production's name, so you can walk the tree by
   the names you wrote.
-- **`src`** — the source text the rule matched.
-- **`kids`** — child nodes, one per sub-rule the production referenced.
+- **`src`**. The source text the rule matched.
+- **`kids`**. Child nodes, one per sub-rule the production referenced.
 
 ## Sequences, sub-rules and character classes
 
@@ -125,7 +125,7 @@ was matched, not a slice of the original input.
 
 ## Repetition, optionals and groups
 
-Repetition is **postfix** — `A?`, `A*`, `A+` — and `( … )` groups a
+Repetition is **postfix** (`A?`, `A*`, `A+`) and `( … )` groups a
 sub-expression so an operator applies to the whole of it:
 
 ```js
@@ -152,7 +152,7 @@ tn.parse('log').src       // => 'log'
 
 ## Terminals: literals, character classes, code points, tokens
 
-**A quoted literal** is matched verbatim and **case-sensitively** — the
+**A quoted literal** is matched verbatim and **case-sensitively**, the
 W3C rule, and the opposite of ABNF's. Single and double quotes are
 interchangeable, so a literal containing one quote is written with the
 other. There are **no escape sequences**: W3C EBNF defines none, so a
@@ -177,7 +177,7 @@ rejected // => true
 **A character class** matches one character: `[a-z]` a range, `[abc]` an
 enumeration, `[^<&]` a negation, `[#x20-#x7E]` a range written as code
 points. A class must open and close on one line and cannot contain `]`
-(there are no escapes — write a literal `]` as the string `"]"`).
+(there are no escapes; write a literal `]` as the string `"]"`).
 
 **A standalone `#xNN`** is a single code point, exactly as in the XML
 specification's own `Char` production:
@@ -192,8 +192,8 @@ tn.ebnf(`Char ::= #x9 | #xA | #xD | [#x20-#xD7FF]`)
 tn.parse('a').src // => 'a'
 ```
 
-**A built-in lexer token** — `TX` (bareword), `NR` (number), `ST`
-(quoted string), `VL` (`true`/`false`/`null`) — matches whole tokens the
+**A built-in lexer token** (`TX` for a bareword, `NR` a number, `ST` a
+quoted string, `VL` `true`/`false`/`null`) matches whole tokens the
 engine's lexer already produces. This is not W3C EBNF; it comes from the
 shared compiler, and it is the only sane way to write a token-level
 grammar for this engine. Prefer it over deriving text character by
@@ -276,7 +276,7 @@ and is rejected by name.
 | Production | `Symbol ::= expr` | a rule |
 | Production (ISO spelling) | `symbol = expr ;` | a rule |
 | Alternation | `A \| B` | one alt per branch |
-| Concatenation | `A B` — or ISO `A , B` | one sequence |
+| Concatenation | `A B`, or ISO `A , B` | one sequence |
 | Grouping | `( A \| B )` | IR `group` |
 | Optional | `A?` | IR `opt` |
 | Zero or more | `A*` | IR `star` |
@@ -297,7 +297,7 @@ Names are `[A-Za-z_][A-Za-z0-9_.-]*`. A hyphen inside a name is part of
 the name (`foo-bar` is one symbol); a hyphen that *starts* a token is
 the subtraction operator, and rejected.
 
-### Not supported — each raises a named error
+### Not supported: each raises a named error
 
 | Construct | Why | Error |
 |---|---|---|
@@ -307,13 +307,13 @@ the subtraction operator, and rejected.
 | ISO option `[ A ]` | `[ … ]` is a character class here | `EbnfParseError: … stray '[' …` |
 | ABNF-style prefix repetition `*A`, `1*A` | repetition is postfix here | `EbnfParseError: … Repetition in this dialect is postfix` |
 | Empty literal `""` | matches nothing; there is no epsilon terminal | `EbnfParseError: … empty string literal …` |
-| Escape sequences in a literal | W3C EBNF defines none | *not an error* — `\` is a literal backslash |
+| Escape sequences in a literal | W3C EBNF defines none | *not an error*; `\` is a literal backslash |
 | Space-bearing ISO meta-identifiers | names are one token | `EbnfParseError: … is not a valid symbol name` |
 | The same rule defined twice | EBNF has no incremental-alternatives operator | `EbnfParseError: rule 'X' is defined more than once` |
 | Two alternatives that both match nothing | genuinely ambiguous | `EbnfParseError: rule 'X' has 2 alternatives that each match nothing` |
-| The same, inside a group — `("x"? \| "y"?)` | a group is a choice too, so the ambiguity is identical | `EbnfParseError: a group in rule 'X' has 2 alternatives that each match nothing` |
-| Empty alternative — `\| A`, `A \|`, `A = ;`, `()` | both dialects require an expression each side of `\|`, and there is no epsilon terminal | `EbnfParseError: … empty alternative …` |
-| Leading comma — `A = , B ;` | ISO's comma separates concatenated items; it is not a prefix | `EbnfParseError: … leading comma …` |
+| The same, inside a group: `("x"? \| "y"?)` | a group is a choice too, so the ambiguity is identical | `EbnfParseError: a group in rule 'X' has 2 alternatives that each match nothing` |
+| Empty alternative: `\| A`, `A \|`, `A = ;`, `()` | both dialects require an expression each side of `\|`, and there is no epsilon terminal | `EbnfParseError: … empty alternative …` |
+| Leading comma: `A = , B ;` | ISO's comma separates concatenated items; it is not a prefix | `EbnfParseError: … leading comma …` |
 | Uppercase code point `#X41` | W3C specifies lowercase `#x`; accepting both would widen the dialect past this table | `EbnfParseError` (unexpected token) |
 | Reference to an undefined rule | nothing to compile | `EbnfCompileError: rule 'X' references unknown rule 'Y'` |
 | Purely left-recursive rule | no seed to anchor the iteration | `EbnfCompileError: rule 'X' is purely left-recursive` |
@@ -323,7 +323,7 @@ the subtraction operator, and rejected.
 The remaining limit is not a syntax the parser refuses; it is a class of
 grammar the *engine* cannot run. The tabnas engine is deterministic. It
 dispatches on bounded, grammar-declared lookahead, plus a mark/rewind
-probe that the shared compiler synthesises for one specific shape — an
+probe that the shared compiler synthesises for one specific shape: an
 optional prefix followed by a distinguishing token. It does not
 backtrack in general.
 
@@ -345,7 +345,7 @@ L ::= "a"+
 
 The shared compiler now performs that transformation itself, so **both
 spellings parse `a a y`**. Alternatives a short bounded prefix already
-separates are left alone — the multi-token dispatcher handles those,
+separates are left alone; the multi-token dispatcher handles those,
 and leaving them untouched preserves the per-alternative identity that
 collision marks and actions depend on.
 
@@ -359,7 +359,7 @@ A ::= "a" A | "a"
 B ::= "a" B | "a"
 ```
 
-Here `a x` and `a y` parse, and so does `a a x` — the first
+Here `a x` and `a y` parse, and so does `a a x`: the first
 alternative's rule is decided at any depth. The second is not: `a a y`
 does not parse, though `A` and `B` are the same shape spelled the same
 way. Which alternative a rule sits behind is what decides, so the
@@ -368,15 +368,15 @@ front-end, and adding one would be dishonest:**
 the boundary depends on the shape *and* on how deep the input nests, so
 any rule sharp enough to catch this grammar also rejects `Expr ::= Term
 "+" Expr | Term`, which works. What the front-end does instead is refuse
-the one case it can rule out soundly — two alternatives that both match
-the empty string — and leave the rest to the compiler's own named
+the one case it can rule out soundly, two alternatives that both match
+the empty string, and leave the rest to the compiler's own named
 errors.
 
 All three shapes are pinned by tests
 ([`ts/test/ebnf.test.js`](ts/test/ebnf.test.js), "the bounded-lookahead
 limit"): the two that parse and the one that does not. If a future
 compiler handles the last one, the suite goes red and this section gets
-rewritten rather than quietly aging.
+rewritten rather than ageing unnoticed.
 
 ## How it fits together
 
@@ -388,10 +388,10 @@ and does nothing else:
 EBNF text ──parseEbnf──▶ Grammar ──bnf.emitGrammarSpec──▶ GrammarSpec
 ```
 
-Everything downstream of that IR — desugaring repetition into helper
+Everything downstream of that IR (desugaring repetition into helper
 rules, eliminating left recursion, tail-repeat rewriting, probe
 dispatch, literal lifting, token allocation, first-set analysis, chain
-emission — lives in `@tabnas/bnf` and is shared with
+emission) lives in `@tabnas/bnf` and is shared with
 [`@tabnas/abnf`](https://github.com/tabnas/abnf) (RFC 5234) and
 [`@tabnas/gbnf`](https://github.com/tabnas/gbnf) (llama.cpp GBNF). A
 diagnostic that names a rule rather than a source position comes from

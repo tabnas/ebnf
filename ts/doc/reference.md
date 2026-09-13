@@ -23,8 +23,8 @@ action closures, an `options` block, and a `rule` table). This is the
 primary entry point. Also exported as `toSpec`, and available on an
 instance as `tn.ebnf.toSpec`.
 
-- `src: string` — the EBNF source.
-- `opts?: EbnfConvertOptions` — see below.
+- `src: string`. The EBNF source.
+- `opts?: EbnfConvertOptions`. See below.
 
 Throws `EbnfParseError` if the source cannot be read, `EbnfCompileError`
 if it reads but cannot be compiled.
@@ -66,7 +66,7 @@ internally by `emitGrammarSpec`; exported for inspection.
 ### `ebnfRules`
 
 The declarative table of tabnas rules that defines the EBNF grammar
-itself — the meta-grammar this package uses to read EBNF source.
+itself: the meta-grammar this package uses to read EBNF source.
 Exported for introspection and tooling.
 
 ### `EbnfConvertOptions`
@@ -123,8 +123,8 @@ This package's version, as a string. Equal to `package.json`'s
 
 | Class | Raised by | Carries |
 |---|---|---|
-| `EbnfParseError` | this front-end — syntax errors and refused constructs | `.line`, `.column` (where a token was involved), `.cause` |
-| `EbnfCompileError` | `@tabnas/bnf`, wrapped — an IR the compiler cannot lower | `.cause` |
+| `EbnfParseError` | this front-end: syntax errors and refused constructs | `.line`, `.column` (where a token was involved), `.cause` |
+| `EbnfCompileError` | `@tabnas/bnf`, wrapped: an IR the compiler cannot lower | `.cause` |
 
 `EbnfCompileError` messages name the offending **rule** rather than a
 source position, because the compiler works on the IR and no longer has
@@ -147,7 +147,7 @@ msg // => "ebnf: rule 'A' references unknown rule 'B'"
 used by XPath, XQuery, XML Schema and JSONPath. Chosen because it has a
 real published corpus, because every one of its operators has a
 destination in the grammar IR, and because its `[…]` character class
-cannot coexist with ISO/IEC 14977's `[ … ]` optional — the dialect has
+cannot coexist with ISO/IEC 14977's `[ … ]` optional; the dialect has
 to be a choice, so it is a documented one.
 
 A small set of ISO/IEC 14977 **spellings** is accepted on top, chosen
@@ -169,7 +169,7 @@ make this an ISO implementation.
 | Optional | `A?` | `opt` |
 | Zero or more | `A*` | `star` |
 | One or more | `A+` | `plus` |
-| Stacked postfix | `(A)*?` | nested — an extension; W3C never stacks them |
+| Stacked postfix | `(A)*?` | nested; an extension, since W3C never stacks them |
 | Literal, double-quoted | `"abc"` | `term`, `caseSensitive: true` |
 | Literal, single-quoted | `'abc'` | `term`, `caseSensitive: true` |
 | Character class, range | `[a-z]` | `regex` |
@@ -178,7 +178,7 @@ make this an ISO implementation.
 | Character class, code points | `[#x20-#x7E]`, `[#x9#xA]` | `regex` |
 | Standalone code point | `#x41` | `term` |
 | Rule reference | a bare `Symbol` | `ref` |
-| Built-in lexer token | `TX`, `NR`, `ST`, `VL` | `token` — an extension from the shared compiler |
+| Built-in lexer token | `TX`, `NR`, `ST`, `VL` | `token`; an extension from the shared compiler |
 | Comment, W3C | `/* … */` | ignored |
 | Comment, ISO | `(* … *)` | ignored; does **not** nest |
 | Left recursion | `E ::= E "+" T \| T` | rewritten to `E ::= T ( "+" T )*` |
@@ -233,7 +233,7 @@ list compiles to an approximation.
 
 The tabnas engine is deterministic: it dispatches on bounded,
 grammar-declared lookahead plus a mark/rewind probe that the shared
-compiler synthesises for one specific shape — an optional prefix
+compiler synthesises for one specific shape: an optional prefix
 followed by a distinguishing token. It does not backtrack in general.
 
 A grammar that hides its decision behind an unbounded prefix is the
@@ -245,7 +245,7 @@ L ::= "a"+
 ```
 
 The shared compiler left-factors alternatives whose shared prefix the
-dispatcher cannot see past, so this parses `a a y` as written — as does
+dispatcher cannot see past, so this parses `a a y` as written, as does
 the hand-factored spelling:
 
 ```
@@ -258,7 +258,7 @@ unfactored: the multi-token dispatcher already handles them, and their
 per-alternative identity (collision marks) is preserved.
 
 Factoring is structural, so it cannot merge distinct rules that spell
-the same unbounded prefix — that remains the limit:
+the same unbounded prefix; that remains the limit:
 
 ```
 S ::= A "x" | B "y"
@@ -267,18 +267,18 @@ B ::= "a" B | "a"
 ```
 
 `a x` and `a y` parse, and so does `a a x`: the first alternative's
-rule is decided at any depth. The second is not — `a a y` does not
+rule is decided at any depth. The second is not: `a a y` does not
 parse, though `A` and `B` are the same shape spelled the same way, so
 the boundary is asymmetric. The front-end does not try to detect this
 statically, and that is deliberate: the boundary depends on
 the shape *and* on how deeply the input nests, so any check sharp enough
 to catch this grammar also rejects `Expr ::= Term "+" Expr | Term`,
-which works. The one ambiguity that *can* be ruled out soundly — two
-alternatives that both match the empty string — is refused, and the rest
+which works. The one ambiguity that *can* be ruled out soundly (two
+alternatives that both match the empty string) is refused, and the rest
 is left to the compiler's own named errors.
 
 All three shapes are pinned by tests, so this section fails the build
-rather than aging quietly if the compiler's reach changes.
+rather than ageing unnoticed if the compiler's reach changes.
 
 ## The meta-grammar
 
@@ -291,14 +291,14 @@ this token vocabulary:
 | `#DEFE` | `=` | eager match token |
 | `#ALT` `#LP` `#RP` `#STAR` `#PLUS` `#QM` | `\|` `(` `)` `*` `+` `?` | fixed |
 | `#CA` `#SC` | `,` `;` | fixed |
-| `#OS` `#CS` `#OB` `#CB` | `[` `]` `{` `}` | fixed — only ever reached on input that is about to be refused |
+| `#OS` `#CS` `#OB` `#CB` | `[` `]` `{` `}` | fixed; only ever reached on input that is about to be refused |
 | `#CC` | a complete `[…]` class | eager match token |
 | `#HX` | `#xNN` | eager match token |
 | `#SUB` | `-` at a token start | eager match token |
 | `#CM` | `/* … */`, `(* … *)` | comment matcher / eager match token |
 | `#TX` `#ST` `#ZZ` | bareword, quoted string, end-of-source | engine defaults |
 
-Every match token is *eager* — it fires wherever its pattern matches,
+Every match token is *eager*: it fires wherever its pattern matches,
 rather than only where the current rule's token column already expects
 it. That is safe because each pattern starts with a character that has
 exactly one meaning in EBNF: `[` only opens a class, `#` only opens a

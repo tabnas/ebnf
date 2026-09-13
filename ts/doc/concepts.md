@@ -27,7 +27,7 @@ A package advertising "EBNF support" without saying which one is
 promising something it cannot deliver, because two of those columns
 cannot be read at once. `[a-z]` is either three characters or an
 optional three-element sequence; `{ x }` is either a repetition or a
-syntax error. No amount of cleverness resolves that — only a decision
+syntax error. No amount of cleverness resolves that; only a decision
 does.
 
 ## Why W3C is the primary dialect
@@ -37,20 +37,20 @@ Three reasons, in order of weight.
 **There is a corpus.** XML 1.0, XML Namespaces, XPath 1.0 through 3.1,
 XQuery, XML Schema, XLink, JSONPath (RFC 9535 uses ABNF, but its
 predecessors and many implementations use this notation) and a long tail
-of related specifications publish load-bearing grammars in exactly this
+of related specifications publish real, working grammars in exactly this
 form. ISO 14977 is widely cited and, in the wild, almost never used
-verbatim — most "ISO EBNF" grammars are a per-tool dialect that borrowed
+verbatim: most "ISO EBNF" grammars are a per-tool dialect that borrowed
 its punctuation.
 
 **Every operator has a destination.** The grammar IR that
 [`@tabnas/bnf`](https://github.com/tabnas/bnf) compiles has `opt`,
 `star`, `plus`, `group`, `term`, `ref`, `token` and `regex` elements.
 W3C's `?`, `*`, `+`, `( … )`, `"…"`, bare symbols and `[…]`/`#xNN` map
-onto those one for one. ISO's `{ … }` and `[ … ]` map just as well —
+onto those one for one. ISO's `{ … }` and `[ … ]` map just as well,
 but its exception operator does not map at all, and picking ISO would
 mean advertising a dialect whose most distinctive operator is missing.
 
-**Character classes are load-bearing.** A grammar for a text format
+**Character classes decide the dialect.** A grammar for a text format
 needs to say "any character except `<` and `&`". W3C has notation for
 that; ISO 14977 does not, and grammars written in it enumerate the
 alternatives or fall back to prose. Since the tabnas lexer matches
@@ -58,7 +58,7 @@ character classes with a regex matcher rather than a rule per character,
 `[…]` is the construct that makes real grammars compile to something
 efficient.
 
-The ISO spellings that *are* accepted — `=`, `,`, `;`, `(* … *)` — were
+The ISO spellings that *are* accepted (`=`, `,`, `;`, `(* … *)`) were
 chosen by a single test: could a reader of a W3C grammar mistake them
 for anything else? None of them can. `=` never appears in W3C EBNF, nor
 does `,` or `;`, and `(*` cannot begin a legal W3C group (a group must
@@ -75,7 +75,7 @@ support; it is what to do with the rest. There are three options:
 2. Accept it and ignore it.
 3. Refuse it by name.
 
-The first two produce a parser that runs and is wrong — the worst
+The first two produce a parser that runs and is wrong: the worst
 possible outcome, because the failure surfaces as a mysterious
 mis-parse a long way from the grammar. This package takes the third
 option everywhere. `A - B` does not become `A`; `? … ?` does not become
@@ -109,7 +109,7 @@ L ::= "a"+
 
 `S` must commit to an alternative before running `L`, but nothing
 distinguishes them until after an arbitrarily long run of `a`. The
-classical remedy is left-factoring — parse the shared prefix once and
+classical remedy is left-factoring: parse the shared prefix once and
 decide after it:
 
 ```
@@ -120,19 +120,19 @@ The shared compiler now applies that transformation itself: consecutive
 alternatives sharing a leading prefix the dispatcher cannot see past
 are factored into a common prefix and a transparent decision helper, so
 both spellings above parse `a a y`. Alternatives a short bounded prefix
-already separates are left alone — the multi-token dispatch handles
+already separates are left alone; the multi-token dispatch handles
 them, and their per-alternative identity (collision marks) survives.
 
 What remains genuinely out of reach is a decision that bounded
-lookahead cannot make even after factoring — alternatives that differ
-only in ways no finite token prefix reveals. The honest version of the
-limitation is that, not "the engine is LL(1)" (it is not — see
+lookahead cannot make even after factoring: alternatives that differ
+only in ways no finite token prefix reveals. The accurate version of the
+limitation is that, not "the engine is LL(1)" (it is not; see
 `Expr ::= Term "+" Expr | Term`, which works via probe dispatch) and
 not a static rejection rule. This package deliberately does **not** try
 to detect the class statically: the boundary depends on both the
 grammar shape and the input depth. Instead it refuses the one ambiguity
-it can rule out soundly — two alternatives that both match the empty
-string, which makes the *grammar* ambiguous rather than merely hard —
+it can rule out soundly (two alternatives that both match the empty
+string, which makes the *grammar* ambiguous rather than merely hard)
 and leaves the rest to be visible in the tests that pin it.
 
 ## Front-end, not compiler
@@ -143,10 +143,10 @@ and leaves the rest to be visible in the tests that pin it.
 EBNF text ──parseEbnf──▶ Grammar ──bnf.emitGrammarSpec──▶ GrammarSpec
 ```
 
-Everything hard about the second arrow — desugaring repetition into
+Everything hard about the second arrow (desugaring repetition into
 helper rules, eliminating left recursion, tail-repeat rewriting, probe
 dispatch, literal lifting, token allocation, first-set analysis, chain
-emission — lives in `@tabnas/bnf` and is shared with
+emission) lives in `@tabnas/bnf` and is shared with
 [`@tabnas/abnf`](https://github.com/tabnas/abnf) and
 [`@tabnas/gbnf`](https://github.com/tabnas/gbnf).
 
@@ -160,7 +160,7 @@ compiler folds a rule whose body is a single token segment into its
 caller, rewrites a left-recursive rule into an iterative one, and routes
 multi-reference alternatives through synthetic `$stepN` continuation
 rules. The tree reflects the compiled grammar. Where you need a node,
-give the rule something to be — a second element keeps it a rule rather
+give the rule something to be: a second element keeps it a rule rather
 than a token.
 
 ## Case sensitivity is a dialect fact
