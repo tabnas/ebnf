@@ -119,7 +119,12 @@ reject the first also rejects the others. The limit is documented in
 README.md, `ts/doc/concepts.md`, `ts/doc/guide.md` and
 `ts/doc/reference.md`, and pinned by the "bounded-lookahead limit"
 tests instead, so a change in the compiler's reach turns the suite red
-rather than aging the prose.
+rather than aging the prose. Both ports pin it: the TypeScript half is
+the `describe('the bounded-lookahead limit')` block in
+`ts/test/ebnf.test.js`, the Go half is `go/lookahead_test.go`, and each
+test names its counterpart by exact string. The reach belongs to the
+shared compiler, so a change there moves both or the two disagree in
+silence.
 
 When that happens — as it did when left factoring landed — update the
 tests AND all four documents in the same change. The suite pins
