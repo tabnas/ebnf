@@ -5,7 +5,7 @@ parser: takes EBNF source in the **W3C dialect** and emits a tabnas
 `GrammarSpec`.
 
 **This is a best-effort front-end.** It implements one dialect properly
-and refuses the rest by name — ISO/IEC 14977 subtraction (`A - B`),
+and refuses the rest by name: ISO/IEC 14977 subtraction (`A - B`),
 special sequences (`? … ?`) and bracket repetition (`{ A }` / `[ A ]`)
 all raise a named error rather than compiling to something plausible.
 The itemised list is in
@@ -38,7 +38,7 @@ tn.parse('1 + 2 * 3').src // => '1+2*3'
 tn.parse('(1+2)*3').rule  // => 'Expr'
 ```
 
-Build the instance once and reuse it — compiling the grammar is the
+Build the instance once and reuse it: compiling the grammar is the
 expensive part. `tn.ebnf.toSpec(src)` builds the spec without installing
 it.
 

@@ -21,8 +21,8 @@ expensive part, so build the instance once and reuse it.
 
 ## Compile without installing
 
-`tn.ebnf.toSpec(src)` — or the bare `ebnfConvert(src)` / `toSpec(src)`
-exports, which need no instance at all — return the `GrammarSpec`
+`tn.ebnf.toSpec(src)` (or the bare `ebnfConvert(src)` / `toSpec(src)`
+exports, which need no instance at all) returns the `GrammarSpec`
 without touching the engine.
 
 ```js
@@ -38,7 +38,7 @@ spec to a different engine instance later.
 ## Choose the start rule
 
 The first production is the start rule by default. Override it with the
-`start` option — handy when a spec grammar lists its productions in
+`start` option, which is handy when a spec grammar lists its productions in
 document order rather than starting with the one you want.
 
 ```js
@@ -73,7 +73,7 @@ turns into a lexer matcher. Some details worth knowing before you copy a
 class out of a specification:
 
 - A class must open and close **on one line**.
-- A class cannot contain `]` — there are no escape sequences. Write a
+- A class cannot contain `]`, because there are no escape sequences. Write a
   literal `]` as the string `"]"`.
 - A `-` at the start or end of a class is a literal hyphen (`[-+]`).
 - `#xNN` inside a class is a code point, so `[#x9#xA#xD]` is
@@ -101,7 +101,7 @@ tn.parse('hello').src // => 'hello'
 ```
 
 Where they are not, the subtraction has to be re-expressed as an
-explicit grammar — there is no mechanical translation.
+explicit grammar; there is no mechanical translation.
 
 **Well-formedness constraints.** Annotations like `[ wfc: … ]` and
 `[ vc: … ]` that spec listings carry alongside productions are prose,
@@ -129,7 +129,7 @@ tn.parse('id = "x"').src // => 'id="x"'
 ## Use the ISO 14977 spellings
 
 `=`, `,`, `;` and `(* … *)` are accepted alongside the W3C forms. The
-*operators* stay W3C — postfix `*`, not `{ … }`.
+*operators* stay W3C: postfix `*`, not `{ … }`.
 
 ```js
 const { Tabnas } = require('@tabnas/parser')
@@ -149,7 +149,7 @@ tn.parse('42').src // => '42'
 
 Errors come in two kinds, and the kind tells you where to look.
 
-`EbnfParseError` — this front-end refused the source. It carries `line`
+`EbnfParseError` means this front-end refused the source. It carries `line`
 and `column` where a token was involved.
 
 ```js
@@ -160,7 +160,7 @@ try { parseEbnf('A ::= "x"\nB ::= { "y" }') } catch (e) { where = [e.name, e.lin
 where // => ['EbnfParseError', 2]
 ```
 
-`EbnfCompileError` — the EBNF parsed, but `@tabnas/bnf` could not
+`EbnfCompileError` means the EBNF parsed, but `@tabnas/bnf` could not
 compile the resulting grammar. These name the offending **rule** rather
 than a source position, because the compiler works on the IR:
 
@@ -185,7 +185,7 @@ L ::= "a"+
 
 The compiler now left-factors such alternatives automatically, so
 `a a y` parses as written. The factored spelling remains the clearer
-one — the shared prefix is parsed once and the decision happens after
+one: the shared prefix is parsed once and the decision happens after
 it:
 
 ```js

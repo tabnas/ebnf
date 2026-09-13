@@ -10,7 +10,7 @@ Prerequisites: Node 24+, and
 npm install @tabnas/parser @tabnas/bnf @tabnas/ebnf
 ```
 
-Everything here uses the **W3C dialect** of EBNF — `::=` for
+Everything here uses the **W3C dialect** of EBNF: `::=` for
 definitions, postfix `?` `*` `+` for repetition, `[…]` for character
 classes. If you have written ISO/IEC 14977 before, read
 [reference.md](reference.md#what-is-and-is-not-supported) first: the
@@ -33,7 +33,7 @@ tn.parse('hello').src // => 'hello'
 ```
 
 `|` separates alternatives. Quoted strings are terminals, matched
-exactly — W3C EBNF literals are case-**sensitive**, so `"hi"` does not
+exactly, because W3C EBNF literals are case-**sensitive**, so `"hi"` does not
 match `HI`.
 
 Each rule that matches contributes one node to the parse tree, with
@@ -120,7 +120,7 @@ input.
 ## 5. When a grammar is refused
 
 The front-end refuses constructs it cannot compile, by name, at compile
-time — not at parse time, and not silently.
+time, not at parse time, and not silently.
 
 ```js
 const { ebnfConvert, EbnfParseError } = require('@tabnas/ebnf')
@@ -133,7 +133,7 @@ name // => 'EbnfParseError'
 `A - B` is ISO/IEC 14977's exception operator (and W3C's too). The
 grammar IR has no difference operator, so rather than compiling
 something almost-right, the converter stops and says so. The same is
-true of `? … ?` special sequences and `{ A }` bracket repetition —
+true of `? … ?` special sequences and `{ A }` bracket repetition;
 see [reference.md](reference.md#what-is-and-is-not-supported) for the
 complete list.
 
@@ -158,13 +158,13 @@ tn.parse('1+2+3').kids.map((k) => k.rule) // => ['Term', 'Term']
 The rewrite is `Expr ::= Term ( "+" Term )*`, so the tree comes out flat
 rather than left-nested, and the leading `1` folds into `Expr` itself
 instead of surfacing as its own `Term`. That is a property of the
-rewrite, not a bug — see [the README's left-recursion
+rewrite, not a bug; see [the README's left-recursion
 section](../../README.md#left-recursion).
 
 ## Where next
 
-- [guide.md](guide.md) — recipes: character classes, translating a spec
+- [guide.md](guide.md). Recipes: character classes, translating a spec
   grammar, left-factoring, reading errors.
-- [reference.md](reference.md) — the API and the exact dialect.
-- [concepts.md](concepts.md) — why the dialect is W3C, and what
+- [reference.md](reference.md). The API and the exact dialect.
+- [concepts.md](concepts.md). Why the dialect is W3C, and what
   "deterministic with bounded lookahead" costs you.
