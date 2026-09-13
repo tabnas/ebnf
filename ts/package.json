@@ -47,14 +47,14 @@
   },
   "peerDependencies": {
     "@tabnas/parser": ">=0.8.0",
-    "@tabnas/bnf": ">=0.1.12"
+    "@tabnas/bnf": ">=0.1.16"
   },
   "devDependencies": {
     "@tabnas/debug": "*",
     "@tabnas/parser": "*",
     "@types/node": "25.6.0",
     "typescript": "6.0.3",
-    "@tabnas/bnf": "*"
+    "@tabnas/bnf": "^0.1.16"
   },
   "engines": {
     "node": ">=24"
