@@ -63,35 +63,7 @@ func Ebnf(src string, opts *ConvertOptions) (*tabnas.GrammarSpec, error) {
 		clone.Tag = "ebnf"
 		opts = &clone
 	}
-	spec, err := emitSafely(grammar, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	// Whether the empty string is in the language is a property of the
-	// grammar, and it has to be answered here: the engine short-circuits
-	// "" before the parse loop starts, so no rule ever sees it. Left
-	// unset, LexOptions.Empty defaults to true and every emitted grammar
-	// accepted "" — `S ::= "a"` included.
-	//
-	// The start rule is the first production unless the caller names one,
-	// which is what the shared compiler wraps as __start__. Fields are set
-	// individually rather than replacing Lex, so nothing the compiler put
-	// there is dropped.
-	start := opts.Start
-	if start == "" {
-		start = grammar.Productions[0].Name
-	}
-	empty := nullableRules(grammar.Productions)[start]
-	if spec.Options == nil {
-		spec.Options = &tabnas.Options{}
-	}
-	if spec.Options.Lex == nil {
-		spec.Options.Lex = &tabnas.LexOptions{}
-	}
-	spec.Options.Lex.Empty = &empty
-
-	return spec, nil
+	return emitSafely(grammar, opts)
 }
 
 // emitSafely runs the shared compiler and turns its failure into an
