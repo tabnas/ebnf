@@ -1,171 +1,165 @@
 # How-to guide (Go)
 
-Short, task-focused recipes. Each is self-contained and assumes you
-have the module installed (see the [tutorial](tutorial.md) for the
-basics). For the full API, every option, and the complete syntax,
-follow the links into the [reference](reference.md).
-
-```go
-import tabnaszon "github.com/tabnas/zon/go"
-```
-
-## Parse a single string
-
-`tabnaszon.Parse` is the simplest entry point — pass source, get a value and
-an error:
-
-```go
-result, err := tabnaszon.Parse(`.{ .a = 1, .b = 2 }`)
-// result: map[string]any{"a": float64(1), "b": float64(2)}
-```
-
-The no-options path reuses a single cached parser instance internally,
-so repeated `tabnaszon.Parse(src)` calls do not rebuild the engine each time.
-It is safe for concurrent use.
-
-## Parse a realistic build.zig.zon
-
-A ZON manifest mixes named struct fields with tuple-style `paths`
-lists and allows trailing commas and `//` line comments:
-
-```go
-src := `.{
-    .name = "example",
-    .version = "0.0.1",
-    .minimum_zig_version = "0.14.0",
-    .dependencies = .{
-        .foo = .{
-            .url = "https://example.com/foo.tar.gz",
-            .hash = "1220deadbeef",
-        },
-    },
-    .paths = .{
-        "build.zig",
-        "src",
-    },
-}`
-
-result, err := tabnaszon.Parse(src)
-// result: map[string]any{
-//   "name":                "example",
-//   "version":             "0.0.1",
-//   "minimum_zig_version":  "0.14.0",
-//   "dependencies": map[string]any{
-//     "foo": map[string]any{
-//       "url": "https://example.com/foo.tar.gz", "hash": "1220deadbeef",
-//     },
-//   },
-//   "paths": []any{"build.zig", "src"},
-// }
-```
-
-## Parse numbers in every ZON base
-
-Numbers accept decimal, hex, octal, binary, floats, and `_` digit
-separators. Every number is a `float64`:
-
-```go
-tabnaszon.Parse("0x2a")      // float64(42)
-tabnaszon.Parse("0o52")      // float64(42)
-tabnaszon.Parse("0b101010")  // float64(42)
-tabnaszon.Parse("1_000_000") // float64(1000000)
-tabnaszon.Parse("3.14")      // float64(3.14)
-```
-
-## Parse character literals as code points
-
-By default Zig char literals (`'A'`, `'\n'`, `'\u{1F600}'`) parse as
-one-character strings. Set `CharAsNumber` to receive numeric code
-points (as `float64`) instead:
-
-```go
-charAsNum := true
-result, err := tabnaszon.Parse(`'A'`, tabnaszon.ZonOptions{CharAsNumber: &charAsNum})
-// result: float64(65)
-```
-
-## Tag enum literals to tell them apart from strings
-
-Without options, an enum-literal value like `.red` becomes the plain
-string `"red"` — indistinguishable from `"red"` in the parsed tree.
-Set `EnumTag` to wrap each enum value in a one-key map so you can tell
-which was which:
-
-```go
-result, err := tabnaszon.Parse(
-    `.{ .kind = .red, .label = "red" }`,
-    tabnaszon.ZonOptions{EnumTag: "$enum"},
-)
-// result: map[string]any{
-//   "kind":  map[string]any{"$enum": "red"},
-//   "label": "red",
-// }
-```
-
-## Read multi-line Zig strings
-
-Consecutive lines prefixed with `\\` become a single string, joined
-with `\n` (the `\\` prefix is stripped from each line):
-
-```go
-src := ".{\n" +
-    "    .description =\n" +
-    "        \\\\first line\n" +
-    "        \\\\second line\n" +
-    "    ,\n" +
-    "}"
-
-result, err := tabnaszon.Parse(src)
-// result: map[string]any{"description": "first line\nsecond line"}
-```
-
-## Reuse a parser for many inputs (with options)
-
-`tabnaszon.Parse(src, opts)` builds a dedicated instance per call when you
-pass options, since the configuration differs per call. For a hot loop
-with fixed options, build one instance with `MakeJsonic` and reuse it:
-
-```go
-j := tabnaszon.MakeJsonic(tabnaszon.ZonOptions{EnumTag: "$enum"})
-for _, src := range inputs {
-    result, err := j.Parse(src)
-    _ = result
-    _ = err
-}
-```
-
-(With *no* options, plain `tabnaszon.Parse(src)` already reuses a cached
-instance, so you do not need `MakeJsonic` for that case.)
-
-## Handle a parse error
-
-ZON deliberately rejects non-ZON input — a bare `{` opener, for
-instance. The parse never panics; it returns an `error`:
-
-```go
-result, err := tabnaszon.Parse(`{ a = 1 }`) // not ZON: bare { is rejected
-if err != nil {
-    // handle the syntax error; result is nil
-}
-```
-
-## Re-enable strict JSON while the plugin is loaded
-
-Every grammar alternate the plugin adds carries the group tag `zon`.
-To switch those alts off — restoring the plain jsonic grammar while
-the plugin stays registered — exclude that tag through the underlying
-jsonic instance:
+Recipes, one task at a time. For a guided introduction see the
+[tutorial](tutorial.md); for the API and the dialect see the
+[reference](reference.md); for the reasoning see
+[concepts](concepts.md).
 
 ```go
 import (
-    tabnasjsonic "github.com/tabnas/jsonic/go"
-    tabnaszon "github.com/tabnas/zon/go"
+    ebnf "github.com/tabnas/ebnf/go"
+    tabnas "github.com/tabnas/parser/go"
 )
-
-j := tabnasjsonic.Make()
-j.UseDefaults(tabnaszon.Zon, tabnaszon.Defaults)
-j.SetOptions(tabnasjsonic.Options{Rule: &tabnasjsonic.RuleOptions{Exclude: "zon"}})
 ```
 
-This is rarely useful — you would normally just not load the plugin —
-but it is the supported way to peel the ZON layer back off.
+## Compile and install in one call
+
+```go
+j := tabnas.Make()
+spec, err := ebnf.Install(j, src, &ebnf.ConvertOptions{Start: "Expr"})
+if err != nil {
+    return err
+}
+out, err := j.Parse(input)
+```
+
+`opts` may be nil, in which case the compiler picks the start rule
+itself.
+
+## Build the spec without installing it
+
+```go
+spec, err := ebnf.ToSpec(src, &ebnf.ConvertOptions{Start: "Expr"})
+```
+
+`Ebnf` is the same function under the name the rest of the fleet uses
+for a bare conversion. Install the result yourself with `j.Grammar(spec)`
+when you are ready.
+
+## Reuse the instance, not the compile
+
+Compiling is the expensive part: three productions become 51 rules, and
+that work happens once per install. Parsing is cheap. So build the
+instance once, keep it, and call `Parse` as often as you like.
+
+Use a fresh instance per grammar. Installing applies lexer settings as
+well as rules, and those are instance-wide, so a second grammar on the
+same instance inherits the first one's lexing. The call does not fail;
+the parse it produces is what changes.
+
+## Get the IR instead of a spec
+
+`ParseEbnf` stops after reading the notation, and hands back the shared
+compiler's grammar IR:
+
+```go
+grammar, err := ebnf.ParseEbnf(src)
+for _, p := range grammar.Productions {
+    p.Name // "Expr", "Term", "Factor"
+    p.Alts // []bnf.Sequence
+}
+```
+
+This is the boundary between this package and the compiler. Use it to
+test that your notation reads the way you meant, without involving
+anything downstream of the IR.
+
+The types are aliases rather than copies: `ebnf.EbnfGrammar` is
+`bnf.Grammar`, and the same for `EbnfProduction`, `EbnfSequence` and
+`EbnfElement`. So a helper written against one signature works with the
+other.
+
+## Write left recursion and let it be rewritten
+
+Left recursion compiles. The shared compiler rewrites it:
+
+```
+E ::= E "+" T | T
+```
+
+becomes the equivalent of `E ::= T ( "+" T )*`. You do not have to do
+that by hand, and the parse tree is the same either way.
+
+What does not compile is a rule with no seed:
+
+```go
+_, err := ebnf.ToSpec(`A ::= A "x"`, nil)
+// ebnf: rule 'A' is purely left-recursive (no seed alternative);
+// cannot eliminate
+```
+
+`EliminateLeftRecursion` runs that pass alone on an IR, which is what a
+test pinning the rewrite wants:
+
+```go
+rewritten := ebnf.EliminateLeftRecursion(grammar)
+```
+
+## Tell the two kinds of error apart
+
+```go
+var pe *ebnf.ParseError
+var ce *ebnf.CompileError
+
+switch {
+case errors.As(err, &pe):
+    // the text is not this dialect: a syntax error, or a construct
+    // this front-end refuses. pe.Line and pe.Column locate it.
+case errors.As(err, &ce):
+    // the text parsed, and the grammar it describes cannot be built:
+    // an unknown reference, a purely left-recursive rule, an
+    // ambiguous FIRST set.
+}
+```
+
+Both wrap their cause, so `errors.Unwrap` reaches the original.
+
+Every message is prefixed `ebnf:`, including the ones the shared
+compiler raised. Their text is kept word for word and only the package
+prefix is restamped, so a user who wrote EBNF never reads the name of a
+package they did not import.
+
+## Use the builtin lexer tokens
+
+`TX`, `NR`, `ST` and `VL` are not rules and do not need defining. They
+name the engine's own lexer tokens for bare text, numbers, strings and
+keyword values:
+
+```
+Factor ::= NR | "(" Expr ")"
+```
+
+They are an extension from the shared compiler rather than part of W3C
+EBNF, which is worth knowing if you are porting a grammar out.
+
+## Keep a grammar in a golden test
+
+The spec is data. Serialise it with the shared compiler's helpers:
+
+```go
+import bnf "github.com/tabnas/bnf/go"
+
+text := bnf.SpecToJSON(spec, 2)
+```
+
+`bnf.SpecToJSONErr` is the same with the failure surfaced, which is the
+one to use in a test that should not pass on an empty string.
+
+## Check what a refusal actually says
+
+The refusals are by name, and the message says what to write instead:
+
+```go
+_, err := ebnf.ToSpec(`A ::= B - C`, nil)
+// ebnf: subtraction ('-') is not supported. The grammar IR has no
+// difference operator, so 'A - B' cannot be compiled. Where both sides
+// are single characters, write the difference as a negated character
+// class instead — '[^abc]' rather than 'Char - [abc]' at line 1,
+// column 9
+```
+
+The full list, with what to write in place of each, is in the
+[reference](reference.md#what-this-dialect-accepts).
+
+The TypeScript recipes for the same tasks are in
+[`../../ts/doc/guide.md`](../../ts/doc/guide.md).

@@ -1,230 +1,119 @@
 # Concepts (Go)
 
-Background on how the Go ZON plugin is put together, and why — plus a
-section on how it differs from the TypeScript version. This is
-understanding-oriented reading; for steps see the
-[tutorial](tutorial.md) and [how-to guide](guide.md), and for exact
-signatures and syntax see the [reference](reference.md).
+Why this front-end is the size it is, where its boundary falls, and what
+the Go port does differently. This is background reading. For steps see
+the [tutorial](tutorial.md) and the [how-to guide](guide.md); for the
+API see the [reference](reference.md).
 
-## A grammar plugin on a shared engine
+## One dialect, done properly
 
-The plugin has no parser of its own. It is a thin layer on a stack of
-two pieces:
+"EBNF" names a family rather than a language. W3C EBNF spells repetition
+postfix and uses `[ … ]` for a character class; ISO/IEC 14977 spells
+repetition `{ A }` and uses `[ A ]` for an option. The two disagree
+about what the same characters mean.
 
-- the **jsonic engine** (`github.com/tabnas/jsonic/go`) — a rule-based
-  parser over a configurable, matcher-based lexer, carrying the
-  relaxed-JSON grammar and its helper actions (`@array$`, the
-  `val`/`map`/`list`/`pair`/`elem` rules), and
-- **this plugin** (`github.com/tabnas/zon/go`) — the option overrides,
-  custom lex matchers, and small grammar overlay that retune that stack
-  to read Zig anonymous-struct syntax instead of JSON.
+A front-end can respond to that in one of two ways. It can accept both
+and guess, or it can implement one and say so. This one implements the
+W3C dialect and refuses the ISO constructs by name.
 
-Because the engine is configuration-driven, ZON support is mostly an
-options change plus a handful of alternates — not a new parser. The
-plugin embeds the canonical grammar text (from the repo-root
-`zon-grammar.jsonic`, kept in sync with the TypeScript source by the
-build), parses it with a throwaway jsonic instance into a
-`*tabnasjsonic.GrammarSpec`, attaches its `*tabnasjsonic.Options` overrides to that
-spec, and applies the whole thing atomically via `j.Grammar(gs,
-&tabnasjsonic.GrammarSetting{Rule: ...G: "zon"})`.
+The refusals are the design, not a gap. `{ A }` compiled as repetition
+would be right, and `[ A ]` compiled as an option would be wrong in the
+same grammar, because `[ … ]` is already a character class here.
+Supporting one bracket of an ISO pair while the other keeps its W3C
+meaning produces grammars that are ISO everywhere except where they
+silently are not, and the failure shows up as a parse that accepts the
+wrong input rather than as an error.
 
-## ZON is not a superset of JSON
+So the error messages name the construct and say what to write instead.
+A refusal that a reader can act on is worth more than an approximation
+they have to discover.
 
-JSON and ZON share scalars but differ in structure:
+## Where the boundary falls
 
-| | JSON / jsonic | ZON |
-|---|---|---|
-| Open a map | `{` | `.{` (followed by `.field =`) |
-| Open a list | `[` | `.{` (otherwise) |
-| Close | `}` / `]` | `}` |
-| Key/value separator | `:` | `=` |
-| Keys | strings | `.identifier` |
-| Strings | `"` `'` `` ` `` | `"` only |
-| Comments | `#` `//` `/* */` | `//` only |
+This package parses one notation into the grammar IR that
+[`tabnas/bnf`](https://github.com/tabnas/bnf) defines, and stops:
 
-The plugin makes those swaps by **disabling** what JSON allows and
-**adding** what ZON needs, rather than accepting both — so a
-`build.zig.zon` file that accidentally used JSON braces is a clear
-error, not a silent success.
+```
+EBNF text ──ParseEbnf──▶ bnf.Grammar ──bnf.EmitGrammarSpec──▶ GrammarSpec
+```
 
-## The four mechanisms
+Everything after the IR is shared with the other BNF-family front-ends:
+desugaring, left-recursion elimination, dispatch analysis, token
+allocation. Three notations differ in how they spell repetition and
+grouping, and agree on what those mean.
 
-The plugin reshapes the stack with four cooperating mechanisms, all
-applied together through one `GrammarSpec`:
+That fixes where a change belongs. How `A*` is spelled is this
+package's; how a star compiles is the compiler's. `ParseEbnf` exists to
+make the boundary testable from the outside: it returns the IR without
+compiling it, so a test can assert that the notation read the way its
+author meant with nothing downstream involved.
 
-1. **Custom lex matchers** own the `.`-prefixed and Zig-specific
-   tokens, registered under `Options.Lex.Match` with high `Order`
-   values so they run ahead of the fixed-token matcher:
-   - `.{` peeks ahead and emits `#OB` (struct) when followed by
-     `<ws>.ident<ws>=`, or `#OS` (tuple) otherwise.
-   - `.identifier`, and `.@"any name"`, emit `#TX` whose `Val` is the
-     name with the dot stripped, and whose `Use["zonEnum"]` flag marks
-     it for optional enum-tag wrapping.
-   - `\\`-prefixed lines emit one `#ST` string token with the joined
-     content. Zig lexes the whole run as one token, so blank lines
-     inside it continue the literal.
-   - char literals emit a `#NR` number token whose value is a one-char
-     string or the code point (as `float64`), per `CharAsNumber`.
-   - numeric literals emit `#NR` from a matcher that reproduces Zig's
-     literal grammar exactly — jsonic's own number lexer is switched
-     off, because relaxed-JSON numbers (`+1`, `.5`, `0123`, `1__0`) are
-     not ZON numbers. An integer too large for an exact `float64`
-     becomes a `*big.Int`.
-   - `//!` and `///` fail the lex: they are Zig doc comments, which ZON
-     rejects.
+The IR types are exported as aliases rather than copies for the same
+reason. `EbnfGrammar` **is** `bnf.Grammar`. A copy would be a second
+definition to keep in step, and there is nothing here that a front-end
+needs to add to it.
 
-2. **Token remapping.** `#CL` is rebound from `:` to `=`; the default
-   char mappings for `#OB`, `#OS`, and `#CS` are dropped to `nil`, so a
-   stray `{`, `[`, or `]` is a syntax error. The default text matcher
-   is turned off.
+## Why there are two error types
 
-3. **Key-set restriction.** The `KEY` token set is narrowed to `#TX`
-   alone, so only an identifier can sit on the left of `=`.
+A grammar can fail in two places, and they send a reader to different
+work.
 
-4. **Grammar overlay.** A few alternates are prepended to `val`,
-   `list`, `elem`, and `pair`, plus a before-close guard on `pair` that
-   rejects a repeated field name (Zig does too). They swap the list terminator from the
-   default `#CS` to `#CB`, seed the list node with `@array$`, and
-   accept a trailing comma before `}`.
+`ParseError` means the text is not this dialect. Something is
+misspelled, or it is ISO, or it is a construct with no meaning here. The
+position is in the error, and the fix is in the source text.
 
-The `Rule.Exclude = "jsonic,imp"` override removes jsonic's implicit
-maps/lists, top-level commas, and path-dive extensions, and
-`Rule.Start = "val"` makes a single value the entry rule.
+`CompileError` means the text is fine EBNF and the grammar it describes
+cannot be built: a reference to a rule nobody defined, a rule that is
+purely left-recursive, two alternatives that both match nothing. The fix
+is in the grammar's design, not its spelling.
 
-## Struct vs tuple disambiguation
+The shared compiler raises the second kind, and this package keeps its
+message word for word, restamping only the package prefix. Somebody who
+wrote EBNF has not imported `bnf` and should not have to learn that it
+exists to read an error about their own grammar.
 
-ZON uses one opener, `.{`, for both maps and lists. The parser allows
-only two tokens of lookahead — not enough to tell a struct from a tuple
-by grammar alone. So the decision is pushed into the lexer: when the
-`.{` matcher fires (`peekIsMapOpen`), it scans past the brace,
-whitespace, and `//` comments and checks for `.ident` followed by `=`.
-If found, it emits `#OB` (struct); otherwise `#OS` (tuple). The grammar
-only ever sees an already-classified open token. This is why `.{}`
-parses as an **empty list**: with nothing inside, there is no
-`.field =` to mark it as a struct.
+## What "best effort" commits to
 
-## Enum literals: one token, two roles
+It is a scope statement, not a disclaimer. The dialect this package
+implements is implemented properly: left recursion is rewritten rather
+than rejected, both comment syntaxes are read, character classes cover
+ranges, enumerations, negation and code points, and the three postfix
+repetitions stack.
 
-A bare `.foo` token (`#TX`) is valid in two positions: before `=` it is
-a key (field name `foo`); in value position it is an enum literal
-(value `"foo"`). Because `#TX` belongs to both the `KEY` and `VAL`
-token sets, the parser picks the right reading purely by context.
+What "best effort" rules out is the rest of the family. There is no
+subtraction, because the IR has no difference operator and one cannot be
+faked over the element kinds. There are no special sequences, because
+ISO leaves their content undefined, so there is nothing to compile.
 
-When `EnumTag` is set, an enum literal in value position is wrapped as
-`map[string]any{EnumTag: name}`. jsonic's grammar already owns the
-value-close phase via `@val-bc/replace`, and once a phase is "replaced"
-the engine suppresses any `/prepend` on it. So the wrapping runs in the
-*after-close* phase (`@val-ac`): a `StateAction` checks whether the
-closed value came from a token carrying the `zonEnum` flag, and if so
-rebuilds `r.Node` as the tagged map. Keys are unaffected.
+The line is drawn at what can be compiled correctly rather than at what
+can be parsed.
 
-## Why reuse one instance
+## Differences from the TypeScript version
 
-Building the ZON grammar dominates the cost of a parse; the parse
-itself is cheap. The default no-options `Parse` path therefore caches a
-single instance behind a `sync.Once`, reusing it across calls (safe for
-concurrent use, since a parse builds its own context and only reads
-instance state). Option-taking calls build a dedicated instance, since
-their configuration differs per call — use `MakeJsonic` once and reuse
-it for a hot loop with fixed options. The repo's `perf_test.go` guards
-the reuse win.
+The Go port follows TypeScript, which defines the language. There are no
+shared fixtures pinning the two together: this repository has no
+`test/spec` directory, and what pins behaviour is each runtime's own
+suite, asserting that every documented refusal is refused and that the
+message names the construct. AGENTS.md records that a message assertion
+is a weaker contract than a shared error-code row.
 
-## Differences from the TS version
+What follows is the API shape, which differs because Go does.
 
-The TypeScript implementation is the reference; the Go module is a
-faithful port built from the same `zon-grammar.jsonic`. The differences
-do **not** change a successful parse's *structure* — they concern the
-host language's API shape, value types, and a couple of error codes.
+- **Errors, not throws.** Every entry point returns an `error`.
+  TypeScript throws `EbnfParseError` and `EbnfCompileError`; the Go
+  types are `*ParseError` and `*CompileError`, matched with
+  `errors.As`, and both implement `Unwrap`.
+- **No plugin object.** TypeScript installs through a plugin
+  (`new Tabnas({ plugins: [ebnf] })`, then `tn.ebnf(src)`). Go has
+  `Install(j, src, opts)`, which is the same two steps as one call.
+- **Two names for the conversion.** `Ebnf` is the fleet's name for a
+  front-end's bare conversion entry point, and `ToSpec` is the name the
+  TypeScript package uses. Keeping both means a reader coming from
+  either side finds the one they expect.
+- **Aliases, not re-exports.** TypeScript re-exports the compiler's
+  types; Go aliases them, which is the closest equivalent and keeps
+  assignability in both directions.
 
-### API shape
-
-| Area | TypeScript | Go |
-|---|---|---|
-| Convenience entry | none — install the plugin yourself | `tabnaszon.Parse(src, opts...)` and `tabnaszon.MakeJsonic(opts...)` |
-| Build a parser | `new Tabnas().use(jsonic).use(Zon, opts)` | `tabnaszon.MakeJsonic(opts)` or `j.UseDefaults(tabnaszon.Zon, tabnaszon.Defaults, m)` |
-| Options | one object `{ charAsNumber, enumTag }` | `ZonOptions{ CharAsNumber *bool, EnumTag string }`, or a `map[string]any` |
-| "Omit vs set" | option present or absent | `*bool` nil vs set; `EnumTag == ""` means unset |
-| Parse failure | **throws** | returns `error`; never panics on parse errors |
-
-The Go side adds the `Parse` / `MakeJsonic` convenience helpers because
-Go has no fluent `.use()` chain; the TypeScript side has no such
-helpers (you build the engine yourself with `.use(jsonic).use(Zon)`).
-
-### Value types
-
-TypeScript returns untyped `any` JavaScript values; Go returns `any`
-with predictable concrete types:
-
-| Value | TypeScript | Go |
-|---|---|---|
-| Struct | object (null-prototype) | `map[string]any` |
-| Tuple / empty | array | `[]any` |
-| Number (all bases, float, char-as-number) | `number` | `float64` |
-| String / enum / char-as-string | `string` | `string` |
-| Boolean | `boolean` | `bool` |
-| Null | `null` | `nil` |
-| Tagged enum | `{ [tag]: name }` | `map[string]any{tag: name}` |
-
-The most visible consequence: ZON integers like `42` come back as the
-JavaScript number `42` in TypeScript and as `float64(42)` in Go — Go
-has no separate integer type in the result tree.
-
-### Error reporting
-
-> **These Go docs were copied from the `zon` repo and still describe ZON
-> in places** — "ZON integers like `42`", "Bare `{` is not a ZON opener",
-> and the value-model section above. Treat anything here that names ZON as
-> unverified for EBNF. This section was one of them; what it claimed was
-> measured, found false, and the underlying difference then repaired.
-
-**There are no error codes to branch on.** This package declares no
-`error`/`hint` catalogue. Diagnostics are `EbnfParseError` /
-`EbnfCompileError` (`ParseError` / `CompileError` in Go), carrying a prose
-`Message` with the `ebnf:` prefix, plus `Line` and `Column`. A caller
-branching on behaviour should match on the type, or on the line and column,
-not on a code — there is no code field.
-
-What was here said a raw control character in a double-quoted string
-reports `unprintable` in TypeScript and `unterminated_string` in Go, and
-that "Both report the failure at the same row/column; only the `Code`
-differs."
-
-Measured 2026-08-19, both halves were wrong — and worse than described:
-
-| input | TypeScript | Go, before | Go, now |
-|---|---|---|---|
-| `g = "a<0x01>b" ;` | rejects, 1:7 | **accepts** | rejects, 1:7 |
-| `g = "abc ;` | rejects, 1:5 | rejects, 1:**11** | rejects, 1:5 |
-| `g = ;` | rejects, 1:5 | rejects, 1:5 | rejects, 1:5 |
-
-The control character was not a code difference at all. It was an
-**accept/reject split** — a strictly worse thing to have been described as
-harmless — and the positions differed precisely on the input where both
-*did* reject.
-
-Both are now **aligned**, per this repo's rule that `ts/` is canonical and
-`go/` tracks it. Go's scanner is hand-written where TypeScript delegates to
-the shared engine lexer, which is why it accepted what the engine rejects;
-it now applies the same boundary (below `0x20`, so space and DEL stay legal
-string body) and reports an unterminated string at the opening quote rather
-than at EOF.
-
-Pinned executably in `go/divergence_test.go` and
-`ts/test/divergence.test.js`, each naming the other, with the third row kept
-as a control so a wholesale position change cannot hide inside the two that
-were repaired. A prose claim cannot fail, and this one did not.
-
-## Accepted vs rejected — edge cases
-
-- `.{}` → `[]any{}`. An empty literal is a list, not a map.
-- `{ a = 1 }` → **error** (returned, not panicked). Bare `{` is not a
-  ZON opener.
-- `'A'` → `"A"` by default, `float64(65)` with `CharAsNumber` set.
-- `"a\\b"` → `"a\b"`. Double quotes only, with Zig escapes; unknown
-  escapes are an error.
-- `.red` as a value → `"red"`, or `map[string]any{tag: "red"}` with
-  `EnumTag`.
-- `.red` as a key (`.red = 1`) → key `red`; `EnumTag` never applies to
-  keys.
-- Trailing comma before `}` → accepted in both structs and tuples.
-- `//` comment → discarded; `#` and `/* */` are not comments in ZON.
+The canonical implementation is in
+[`../../ts/README.md`](../../ts/README.md), and its own concepts page is
+[`../../ts/doc/concepts.md`](../../ts/doc/concepts.md).
