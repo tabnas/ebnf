@@ -6,9 +6,10 @@ parser: takes EBNF source in the **W3C dialect** and emits a tabnas
 
 **This is a best-effort front-end.** It implements one dialect properly
 and refuses the rest by name: ISO/IEC 14977 subtraction (`A - B`),
-special sequences (`? … ?`) and bracket repetition (`{ A }` / `[ A ]`)
-all raise a named error rather than compiling to something plausible.
-The itemised list is in
+special sequences (`? … ?`) and bracket repetition (`{ A }`) all raise a
+named error rather than compiling to something plausible. The ISO option
+`[ A ]` is the one to watch, because `[ … ]` is a character class in
+this dialect: write `A?`. The itemised list is in
 [doc/reference.md](doc/reference.md#what-is-and-is-not-supported); read
 it before writing a grammar.
 

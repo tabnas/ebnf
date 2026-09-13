@@ -136,28 +136,26 @@ render them to somebody who has the package and not the repository.
 ### Withheld pages
 
 A page can be reader-facing and still be wrong to gate. `gated-docs.cjs`
-carries a `WITHHELD` map for that case, and every entry names its reason:
+carries a `WITHHELD` map for that case, and every entry names its reason.
 
-| Page | Withheld because |
-|---|---|
-| `go/README.md` | byte-identical to `tabnas/zon`'s; documents the ZON plugin |
-| `go/doc/guide.md` | byte-identical to `tabnas/zon`'s; documents the ZON plugin |
-| `go/doc/reference.md` | byte-identical to `tabnas/zon`'s; documents the ZON plugin |
-| `go/doc/tutorial.md` | byte-identical to `tabnas/zon`'s; documents the ZON plugin |
-| `go/doc/concepts.md` | 77 % identical to `tabnas/zon`'s; documents the ZON plugin |
+**The map is empty.** It held this repository's whole Go documentation
+surface, copied from `tabnas/zon` when the repository was scaffolded and
+never rewritten: `go/README.md` opened `# zon (Go)`, and the four pages
+under `go/doc/` described a ZON parser under the name of this front-end.
+A clean Vale run over them would have reported that another package's
+documentation is well written, which is worse than no report: it reads
+as a check on content, and the one problem those pages had is the one no
+linter can see. The copy carried a false claim of its own, too, which
+`go/divergence_test.go` records: a parity statement that came with it
+and that measurement disproved.
 
-The whole Go documentation surface here was copied from another
-repository and never rewritten, so it describes a ZON parser under the
-name of this front-end. A clean Vale run over it would report that
-another package's documentation is well written. That is worse than no
-report, because it reads as a check on content that no linter can see,
-and the one problem these pages have is the one it cannot check.
+They have since been written for this package and are gated with the
+rest.
 
-The copy already carried a false claim once: `go/divergence_test.go`
-records a parity statement that came with it and that measurement
-disproved. Withholding is a debt, not a category. It is tracked in
-`tabnas/ebnf` issue 25, and an entry leaves the map as the last step of
-writing the real page.
+The map stays, empty. Withholding is a debt rather than a category, and
+the failure it guards against is a copied page nobody noticed. The next
+one will arrive the same way. An entry names the page and the reason,
+and leaves the map as the last step of writing the real one.
 
 ## The voice
 

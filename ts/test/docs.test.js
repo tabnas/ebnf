@@ -227,8 +227,10 @@ describe('docs-style', () => {
     const files = paths().map((p) => p.file)
     Assert.ok(0 < files.length, 'the gated set is not empty')
 
-    // A withheld README is a recorded debt, not a missing gate: this
-    // repository's go/README.md is tabnas/zon's, byte for byte.
+    // A withheld README is a recorded debt, not a missing gate. Nothing
+    // is withheld now: go/README.md was tabnas/zon's and has been
+    // written for this package, so the exemption is unreached and stays
+    // only because the map it reads can fill again.
     for (const r of ['README.md', 'ts/README.md', 'go/README.md']) {
       if (Fs.existsSync(Path.join(REPO, r)) && !(r in WITHHELD)) {
         Assert.ok(files.includes(r), `${r} exists and is gated`)
