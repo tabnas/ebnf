@@ -12,7 +12,8 @@
 # that CI gates.
 
 .PHONY: all build test clean build-ts test-ts clean-ts publish-ts reset \
-        build-go test-go
+        build-go test-go \
+        prose prose-counts
 
 all: build test
 
