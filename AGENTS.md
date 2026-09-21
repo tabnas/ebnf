@@ -56,6 +56,7 @@ quietly dropped from the tests.
 | [`ts/test/version.test.js`](ts/test/version.test.js) | `VERSION` vs `package.json` "version". |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs. |
 | [`go/`](go/) | Go port of `ts/`, shipped in v0.1.2. `go/facade.go` exports `Ebnf`, `ToSpec`, `EliminateLeftRecursion` and `Install`, plus `ParseError` / `CompileError`; `go/ebnf.go` holds `VERSION`, which `go/version_test.go` pins against `ts/package.json`. Four-quadrant docs in [`go/doc/`](go/doc/). |
+| [`rs/`](rs/) | Rust port of `ts/`, crate `tabnas-ebnf`. `rs/src/lib.rs` exports `ebnf`, `ebnf_convert`, `to_spec`, `parse_ebnf`, `emit_grammar_spec`, `ebnf_rules`, `plugin`, `VERSION`, `EbnfParseError` and `EbnfCompileError`; the meta-grammar is a tabnas rule table, as in `ts/`, not a scanner as in `go/`. See [`rs/AGENTS.md`](rs/AGENTS.md). |
 
 ## How the meta-grammar reads EBNF
 
@@ -119,12 +120,12 @@ reject the first also rejects the others. The limit is documented in
 README.md, `ts/doc/concepts.md`, `ts/doc/guide.md` and
 `ts/doc/reference.md`, and pinned by the "bounded-lookahead limit"
 tests instead, so a change in the compiler's reach turns the suite red
-rather than aging the prose. Both ports pin it: the TypeScript half is
+rather than aging the prose. All three ports pin it: the TypeScript half is
 the `describe('the bounded-lookahead limit')` block in
-`ts/test/ebnf.test.js`, the Go half is `go/lookahead_test.go`, and each
-test names its counterpart by exact string. The reach belongs to the
-shared compiler, so a change there moves both or the two disagree in
-silence.
+`ts/test/ebnf.test.js`, the Go half is `go/lookahead_test.go`, the Rust
+half is `rs/tests/lookahead_test.rs`, and each test names its
+counterparts by exact string. The reach belongs to the shared compiler,
+so a change there moves all of them or they disagree in silence.
 
 When that happens — as it did when left factoring landed — update the
 tests AND all four documents in the same change. The suite pins
@@ -136,12 +137,16 @@ If you are tempted to add a heuristic here: run it against
 
 ## Authority and alignment rules
 
-1. **`ts/` is canonical.** `go/` will track it. Neither exists yet in
-   Go; do not add a Go port piecemeal.
+1. **`ts/` is canonical.** `go/` and `rs/` track it. Where a port
+   answers something TypeScript does not, the port is wrong until
+   [`DIVERGENCE.md`](DIVERGENCE.md) records the measurement, the reason
+   and who owns the repair.
 2. **Nothing notation-neutral belongs here.** If a change would help
    ABNF or GBNF too, it belongs in `@tabnas/bnf`.
 3. **`VERSION` in `ts/src/ebnf.ts` MUST equal `ts/package.json`
-   "version".** `ts/test/version.test.js` fails the build on drift.
+   "version".** `ts/test/version.test.js` fails the build on drift, and
+   so do `go/version_test.go` and `rs/tests/version_test.rs`, which
+   reach across to every other site.
 4. **Compiler diagnostics keep the compiler's wording.** The facade
    restamps only the leading package prefix (`bnf:` / `abnf:` → `ebnf:`)
    so every error this package raises reads consistently; the rest of
@@ -215,7 +220,7 @@ The commands that prove a change is correct. Run them from the repo root
 unless stated:
 
 ```bash
-make build && make test      # both runtimes
+make build && make test      # all three runtimes
 ```
 
 or, equivalently, when iterating on one of them:
@@ -223,7 +228,15 @@ or, equivalently, when iterating on one of them:
 ```bash
 (cd ts && npm run build && npm test)   # build first: the tests run against dist/
 (cd go && go build ./... && go test ./...)
+(cd rs && cargo test --all-targets && cargo test --doc)
 ```
+
+The Rust crate takes the engine and the shared compiler as PATH
+dependencies on sibling checkouts (`../../parser/rs`, `../../bnf/rs`)
+and `tabnas-support` as a third, so clone all three beside this
+repository first. `ci/rust/run.sh` is the full gate, formatting,
+clippy and the `Cargo.lock` check included, and `rs/README.md` is
+doctested, which is why `cargo test --doc` is a separate command.
 
 The explicit build is redundant but harmless: `ts/package.json` sets
 `pretest` to `npm run build`, so `npm test` compiles `dist/` first whether or

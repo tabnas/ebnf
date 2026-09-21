@@ -18,7 +18,8 @@ const PAGES = [
   "go/doc/tutorial.md",
   "README.md",
   "ts/README.md",
-  "go/README.md"
+  "go/README.md",
+  "rs/README.md"
 ]
 
 // Pages that exist but are not this repository's documentation, so a

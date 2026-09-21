@@ -401,6 +401,7 @@ there.
 |---|---|
 | [`ts/`](ts/) | TypeScript / JavaScript (`@tabnas/ebnf`). |
 | [`go/`](go/) | Go port (`github.com/tabnas/ebnf/go`). |
+| [`rs/`](rs/) | Rust port (crate `tabnas-ebnf`). |
 
 ## Documentation
 
@@ -413,8 +414,11 @@ Four-quadrant [Diátaxis](https://diataxis.fr) docs:
 | Reference (API + dialect) | [ts/doc/reference.md](ts/doc/reference.md) |
 | Concepts (why) | [ts/doc/concepts.md](ts/doc/concepts.md) |
 
-See [`ts/README.md`](ts/README.md) for per-language orientation and
-[`AGENTS.md`](AGENTS.md) for the internals.
+See [`ts/README.md`](ts/README.md), [`go/README.md`](go/README.md) and
+[`rs/README.md`](rs/README.md) for per-language orientation,
+[`DIVERGENCE.md`](DIVERGENCE.md) for where a port answers something the
+canonical implementation does not, and [`AGENTS.md`](AGENTS.md) for the
+internals.
 
 ## License
 

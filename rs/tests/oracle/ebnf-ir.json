@@ -1,0 +1,4262 @@
+[
+ {
+  "src": "A ::= \"x\" B\nB ::= \"y\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 10,
+         "e": 11,
+         "r": 1,
+         "c": 11
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 18,
+         "e": 21,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 12,
+      "e": 13,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= \"x\" | \"y\" | \"z\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 12,
+         "e": 15,
+         "r": 1,
+         "c": 13
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "z",
+        "caseSensitive": true,
+        "sp": {
+         "s": 18,
+         "e": 21,
+         "r": 1,
+         "c": 19
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= \"x\"? \"y\"* \"z\"+",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "term",
+         "literal": "x",
+         "caseSensitive": true,
+         "sp": {
+          "s": 6,
+          "e": 9,
+          "r": 1,
+          "c": 7
+         }
+        }
+       },
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "term",
+         "literal": "y",
+         "caseSensitive": true,
+         "sp": {
+          "s": 11,
+          "e": 14,
+          "r": 1,
+          "c": 12
+         }
+        }
+       },
+       {
+        "kind": "plus",
+        "inner": {
+         "kind": "term",
+         "literal": "z",
+         "caseSensitive": true,
+         "sp": {
+          "s": 16,
+          "e": 19,
+          "r": 1,
+          "c": 17
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "A$step1",
+   "A$step2",
+   "__start__",
+   "_gen1_opt_term",
+   "_gen2_star_term",
+   "_gen3_plus_term",
+   "_gen3_star_term"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= ( \"x\" | \"y\" ) \"z\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "group",
+        "alts": [
+         [
+          {
+           "kind": "term",
+           "literal": "x",
+           "caseSensitive": true,
+           "sp": {
+            "s": 8,
+            "e": 11,
+            "r": 1,
+            "c": 9
+           }
+          }
+         ],
+         [
+          {
+           "kind": "term",
+           "literal": "y",
+           "caseSensitive": true,
+           "sp": {
+            "s": 14,
+            "e": 17,
+            "r": 1,
+            "c": 15
+           }
+          }
+         ]
+        ],
+        "sp": {
+         "s": 6,
+         "e": 19,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "z",
+        "caseSensitive": true,
+        "sp": {
+         "s": 20,
+         "e": 23,
+         "r": 1,
+         "c": 21
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "A$step1",
+   "__start__",
+   "_gen1_group"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= ( \"x\" )*?",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "star",
+         "inner": {
+          "kind": "group",
+          "alts": [
+           [
+            {
+             "kind": "term",
+             "literal": "x",
+             "caseSensitive": true,
+             "sp": {
+              "s": 8,
+              "e": 11,
+              "r": 1,
+              "c": 9
+             }
+            }
+           ]
+          ],
+          "sp": {
+           "s": 6,
+           "e": 13,
+           "r": 1,
+           "c": 7
+          }
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__",
+   "_gen1_group",
+   "_gen2_star__gen1_group",
+   "_gen2_star__gen1_group$alt0",
+   "_gen2_star__gen1_group$alt0$step1",
+   "_gen3_opt__gen2_star__gen1_group"
+  ],
+  "emptyOk": true
+ },
+ {
+  "src": "A ::= ( \"x\" )?*+",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "plus",
+        "inner": {
+         "kind": "star",
+         "inner": {
+          "kind": "opt",
+          "inner": {
+           "kind": "group",
+           "alts": [
+            [
+             {
+              "kind": "term",
+              "literal": "x",
+              "caseSensitive": true,
+              "sp": {
+               "s": 8,
+               "e": 11,
+               "r": 1,
+               "c": 9
+              }
+             }
+            ]
+           ],
+           "sp": {
+            "s": 6,
+            "e": 13,
+            "r": 1,
+            "c": 7
+           }
+          }
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__",
+   "_gen1_group",
+   "_gen2_opt__gen1_group",
+   "_gen3_star__gen2_opt__gen1_group",
+   "_gen3_star__gen2_opt__gen1_group$alt0",
+   "_gen3_star__gen2_opt__gen1_group$alt0$step1",
+   "_gen4_plus__gen3_star__gen2_opt__gen1_group",
+   "_gen4_plus__gen3_star__gen2_opt__gen1_group$step1",
+   "_gen4_star__gen3_star__gen2_opt__gen1_group",
+   "_gen4_star__gen3_star__gen2_opt__gen1_group$alt0",
+   "_gen4_star__gen3_star__gen2_opt__gen1_group$alt0$step1"
+  ],
+  "emptyOk": true
+ },
+ {
+  "src": "A ::= [a-z]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0061-\\u007a]",
+        "flags": "",
+        "sp": {
+         "s": 6,
+         "e": 11,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [^<&]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[^\\u003c\\u0026]",
+        "flags": "u",
+        "sp": {
+         "s": 6,
+         "e": 11,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [#x20-#x7E]\nB ::= [#x9#xA#xD]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0020-\\u007e]",
+        "flags": "",
+        "sp": {
+         "s": 6,
+         "e": 17,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0009\\u000a\\u000d]",
+        "flags": "",
+        "sp": {
+         "s": 24,
+         "e": 35,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 18,
+      "e": 19,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "B",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [-+]\nB ::= [a-]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u002d\\u002b]",
+        "flags": "",
+        "sp": {
+         "s": 6,
+         "e": 10,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0061\\u002d]",
+        "flags": "",
+        "sp": {
+         "s": 17,
+         "e": 21,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 11,
+      "e": 12,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "B",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [#x10000-#x10FFFF]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u{10000}-\\u{10ffff}]",
+        "flags": "u",
+        "sp": {
+         "s": 6,
+         "e": 24,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [abc]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0061\\u0062\\u0063]",
+        "flags": "",
+        "sp": {
+         "s": 6,
+         "e": 11,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [^a-zA-Z0-9]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[^\\u0061-\\u007a\\u0041-\\u005a\\u0030-\\u0039]",
+        "flags": "u",
+        "sp": {
+         "s": 6,
+         "e": 18,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [\\\\]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u005c\\u005c]",
+        "flags": "",
+        "sp": {
+         "s": 6,
+         "e": 10,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= [.*+?]",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u002e\\u002a\\u002b\\u003f]",
+        "flags": "",
+        "sp": {
+         "s": 6,
+         "e": 12,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= #x41",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "A",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 10,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= #xD7FF\nB ::= #xd7ff",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "퟿",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 12,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "퟿",
+        "caseSensitive": true,
+        "sp": {
+         "s": 19,
+         "e": 25,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 13,
+      "e": 14,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= 'a\"b' | \"c'd\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "a\"b",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 11,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "c'd",
+        "caseSensitive": true,
+        "sp": {
+         "s": 14,
+         "e": 19,
+         "r": 1,
+         "c": 15
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= \"\\n\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "\\n",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 10,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= \"]\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "]",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "a = \"x\" ;\nb = \"y\" ;",
+  "ir": {
+   "productions": [
+    {
+     "name": "a",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 4,
+         "e": 7,
+         "r": 1,
+         "c": 5
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "b",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 14,
+         "e": 17,
+         "r": 2,
+         "c": 5
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 10,
+      "e": 11,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "a"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "a ::= \"x\"\nb ::= \"y\" ;",
+  "ir": {
+   "productions": [
+    {
+     "name": "a",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "b",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 16,
+         "e": 19,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 10,
+      "e": 11,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "a"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "a ::= \"x\" , \"y\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "a",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 12,
+         "e": 15,
+         "r": 1,
+         "c": 13
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "a"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "a ::= \"x\" \"y\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "a",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 10,
+         "e": 13,
+         "r": 1,
+         "c": 11
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "a"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "(* leading *) g = \"a\" (* inline *) \"b\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "g",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 18,
+         "e": 21,
+         "r": 1,
+         "c": 19
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "b",
+        "caseSensitive": true,
+        "sp": {
+         "s": 35,
+         "e": 38,
+         "r": 1,
+         "c": 36
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 14,
+      "e": 15,
+      "r": 1,
+      "c": 15
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "g"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "(* one\ntwo\nthree *)\na ::= \"x\"\nb ::= { \"y\" }",
+  "error": "ebnf: ISO 14977 bracket repetition '{ … }' at line 5, column 7 is not supported. This front-end reads W3C EBNF, where repetition is postfix: write 'A*' for '{ A }' and 'A?' for the ISO '[ A ]'. ('[ … ]' is a character class here, which is why the ISO reading cannot also be offered.)",
+  "line": 5,
+  "column": 7
+ },
+ {
+  "src": "/* leading */ G ::= \"a\" /* inline */ \"b\" /* trailing */",
+  "ir": {
+   "productions": [
+    {
+     "name": "G",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 20,
+         "e": 23,
+         "r": 1,
+         "c": 21
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "b",
+        "caseSensitive": true,
+        "sp": {
+         "s": 37,
+         "e": 40,
+         "r": 1,
+         "c": 38
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 14,
+      "e": 15,
+      "r": 1,
+      "c": 15
+     }
+    }
+   ]
+  },
+  "rules": [
+   "G",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "greet = \"hi\" | \"hello\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "greet",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "hi",
+        "caseSensitive": true,
+        "sp": {
+         "s": 8,
+         "e": 12,
+         "r": 1,
+         "c": 9
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "hello",
+        "caseSensitive": true,
+        "sp": {
+         "s": 15,
+         "e": 22,
+         "r": 1,
+         "c": 16
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 5,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "greet"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "_x ::= \"a\"\nx.y ::= \"b\"\nx-y ::= \"c\"\nChar32 ::= \"d\"\nA ::= _x x.y x-y Char32",
+  "ir": {
+   "productions": [
+    {
+     "name": "_x",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 7,
+         "e": 10,
+         "r": 1,
+         "c": 8
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 2,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "x.y",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "b",
+        "caseSensitive": true,
+        "sp": {
+         "s": 19,
+         "e": 22,
+         "r": 2,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 11,
+      "e": 14,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "x-y",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "c",
+        "caseSensitive": true,
+        "sp": {
+         "s": 31,
+         "e": 34,
+         "r": 3,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 23,
+      "e": 26,
+      "r": 3,
+      "c": 1
+     }
+    },
+    {
+     "name": "Char32",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "d",
+        "caseSensitive": true,
+        "sp": {
+         "s": 46,
+         "e": 49,
+         "r": 4,
+         "c": 12
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 35,
+      "e": 41,
+      "r": 4,
+      "c": 1
+     }
+    },
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "_x",
+        "sp": {
+         "s": 56,
+         "e": 58,
+         "r": 5,
+         "c": 7
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "x.y",
+        "sp": {
+         "s": 59,
+         "e": 62,
+         "r": 5,
+         "c": 10
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "x-y",
+        "sp": {
+         "s": 63,
+         "e": 66,
+         "r": 5,
+         "c": 14
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "Char32",
+        "sp": {
+         "s": 67,
+         "e": 73,
+         "r": 5,
+         "c": 18
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 50,
+      "e": 51,
+      "r": 5,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__",
+   "_x"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "true ::= \"t\"\nfalse ::= \"f\"\nnull ::= \"n\"\nA ::= true | false | null",
+  "ir": {
+   "productions": [
+    {
+     "name": "true",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "t",
+        "caseSensitive": true,
+        "sp": {
+         "s": 9,
+         "e": 12,
+         "r": 1,
+         "c": 10
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 4,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "false",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "f",
+        "caseSensitive": true,
+        "sp": {
+         "s": 23,
+         "e": 26,
+         "r": 2,
+         "c": 11
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 13,
+      "e": 18,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "null",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "n",
+        "caseSensitive": true,
+        "sp": {
+         "s": 36,
+         "e": 39,
+         "r": 3,
+         "c": 10
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 27,
+      "e": 31,
+      "r": 3,
+      "c": 1
+     }
+    },
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "true",
+        "sp": {
+         "s": 46,
+         "e": 50,
+         "r": 4,
+         "c": 7
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "false",
+        "sp": {
+         "s": 53,
+         "e": 58,
+         "r": 4,
+         "c": 14
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "null",
+        "sp": {
+         "s": 61,
+         "e": 65,
+         "r": 4,
+         "c": 22
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 40,
+      "e": 41,
+      "r": 4,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__",
+   "true"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "Pair ::= \"{\" Key \":\" Val \"}\"\nKey ::= TX\nVal ::= NR | ST",
+  "ir": {
+   "productions": [
+    {
+     "name": "Pair",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "{",
+        "caseSensitive": true,
+        "sp": {
+         "s": 9,
+         "e": 12,
+         "r": 1,
+         "c": 10
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "Key",
+        "sp": {
+         "s": 13,
+         "e": 16,
+         "r": 1,
+         "c": 14
+        }
+       },
+       {
+        "kind": "term",
+        "literal": ":",
+        "caseSensitive": true,
+        "sp": {
+         "s": 17,
+         "e": 20,
+         "r": 1,
+         "c": 18
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "Val",
+        "sp": {
+         "s": 21,
+         "e": 24,
+         "r": 1,
+         "c": 22
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "}",
+        "caseSensitive": true,
+        "sp": {
+         "s": 25,
+         "e": 28,
+         "r": 1,
+         "c": 26
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 4,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "Key",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "TX",
+        "sp": {
+         "s": 37,
+         "e": 39,
+         "r": 2,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 29,
+      "e": 32,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "Val",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "NR",
+        "sp": {
+         "s": 48,
+         "e": 50,
+         "r": 3,
+         "c": 9
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "ST",
+        "sp": {
+         "s": 53,
+         "e": 55,
+         "r": 3,
+         "c": 14
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 40,
+      "e": 43,
+      "r": 3,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "Key",
+   "Pair",
+   "Pair$step1",
+   "Pair$step2",
+   "Val",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "E ::= E \"+\" T | T\nT ::= \"1\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "E",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "E",
+        "sp": {
+         "s": 6,
+         "e": 7,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "+",
+        "caseSensitive": true,
+        "sp": {
+         "s": 8,
+         "e": 11,
+         "r": 1,
+         "c": 9
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "T",
+        "sp": {
+         "s": 12,
+         "e": 13,
+         "r": 1,
+         "c": 13
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "T",
+        "sp": {
+         "s": 16,
+         "e": 17,
+         "r": 1,
+         "c": 17
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "T",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "1",
+        "caseSensitive": true,
+        "sp": {
+         "s": 24,
+         "e": 27,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 18,
+      "e": 19,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "E",
+   "__start__",
+   "_gen1_group",
+   "_gen2_star__gen1_group",
+   "_gen2_star__gen1_group$alt0",
+   "_gen2_star__gen1_group$alt0$step1"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "Expr ::= Expr \"+\" Term | Term\nTerm ::= NR",
+  "ir": {
+   "productions": [
+    {
+     "name": "Expr",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "Expr",
+        "sp": {
+         "s": 9,
+         "e": 13,
+         "r": 1,
+         "c": 10
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "+",
+        "caseSensitive": true,
+        "sp": {
+         "s": 14,
+         "e": 17,
+         "r": 1,
+         "c": 15
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "Term",
+        "sp": {
+         "s": 18,
+         "e": 22,
+         "r": 1,
+         "c": 19
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "Term",
+        "sp": {
+         "s": 25,
+         "e": 29,
+         "r": 1,
+         "c": 26
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 4,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "Term",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "NR",
+        "sp": {
+         "s": 39,
+         "e": 41,
+         "r": 2,
+         "c": 10
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 30,
+      "e": 34,
+      "r": 2,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "Expr",
+   "Term",
+   "__start__",
+   "_gen1_group",
+   "_gen2_star__gen1_group",
+   "_gen2_star__gen1_group$alt0",
+   "_gen2_star__gen1_group$alt0$step1"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "A ::= \"x\"? | \"y\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "term",
+         "literal": "x",
+         "caseSensitive": true,
+         "sp": {
+          "s": 6,
+          "e": 9,
+          "r": 1,
+          "c": 7
+         }
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 13,
+         "e": 16,
+         "r": 1,
+         "c": 14
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__",
+   "_gen1_opt_term"
+  ],
+  "emptyOk": true
+ },
+ {
+  "src": "A ::= (\"x\"? | \"y\") \"z\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "group",
+        "alts": [
+         [
+          {
+           "kind": "opt",
+           "inner": {
+            "kind": "term",
+            "literal": "x",
+            "caseSensitive": true,
+            "sp": {
+             "s": 7,
+             "e": 10,
+             "r": 1,
+             "c": 8
+            }
+           }
+          }
+         ],
+         [
+          {
+           "kind": "term",
+           "literal": "y",
+           "caseSensitive": true,
+           "sp": {
+            "s": 14,
+            "e": 17,
+            "r": 1,
+            "c": 15
+           }
+          }
+         ]
+        ],
+        "sp": {
+         "s": 6,
+         "e": 18,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "z",
+        "caseSensitive": true,
+        "sp": {
+         "s": 19,
+         "e": 22,
+         "r": 1,
+         "c": 20
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "A$step1",
+   "__start__",
+   "_gen1_opt_term",
+   "_gen2_group"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "S ::= A\nA ::= B\nB ::= \"a\"*",
+  "ir": {
+   "productions": [
+    {
+     "name": "S",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "A",
+        "sp": {
+         "s": 6,
+         "e": 7,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 14,
+         "e": 15,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 8,
+      "e": 9,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "term",
+         "literal": "a",
+         "caseSensitive": true,
+         "sp": {
+          "s": 22,
+          "e": 25,
+          "r": 3,
+          "c": 7
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 16,
+      "e": 17,
+      "r": 3,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "B",
+   "S",
+   "__start__",
+   "_gen1_star_term"
+  ],
+  "emptyOk": true
+ },
+ {
+  "src": "S ::= A B\nA ::= \"x\"?\nB ::= \"y\"?",
+  "ir": {
+   "productions": [
+    {
+     "name": "S",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "A",
+        "sp": {
+         "s": 6,
+         "e": 7,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 8,
+         "e": 9,
+         "r": 1,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "term",
+         "literal": "x",
+         "caseSensitive": true,
+         "sp": {
+          "s": 16,
+          "e": 19,
+          "r": 2,
+          "c": 7
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 10,
+      "e": 11,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "term",
+         "literal": "y",
+         "caseSensitive": true,
+         "sp": {
+          "s": 27,
+          "e": 30,
+          "r": 3,
+          "c": 7
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 21,
+      "e": 22,
+      "r": 3,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "B",
+   "S",
+   "S$step1",
+   "__start__",
+   "_gen1_opt_term",
+   "_gen2_opt_term",
+   "_gen3_opt_term"
+  ],
+  "emptyOk": true
+ },
+ {
+  "src": "S ::= A \"x\" | B \"y\"\nA ::= \"a\" A | \"a\"\nB ::= \"a\" B | \"a\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "S",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "A",
+        "sp": {
+         "s": 6,
+         "e": 7,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 8,
+         "e": 11,
+         "r": 1,
+         "c": 9
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 14,
+         "e": 15,
+         "r": 1,
+         "c": 15
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "y",
+        "caseSensitive": true,
+        "sp": {
+         "s": 16,
+         "e": 19,
+         "r": 1,
+         "c": 17
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 26,
+         "e": 29,
+         "r": 2,
+         "c": 7
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "A",
+        "sp": {
+         "s": 30,
+         "e": 31,
+         "r": 2,
+         "c": 11
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 34,
+         "e": 37,
+         "r": 2,
+         "c": 15
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 20,
+      "e": 21,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 44,
+         "e": 47,
+         "r": 3,
+         "c": 7
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 48,
+         "e": 49,
+         "r": 3,
+         "c": 11
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "a",
+        "caseSensitive": true,
+        "sp": {
+         "s": 52,
+         "e": 55,
+         "r": 3,
+         "c": 15
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 38,
+      "e": 39,
+      "r": 3,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "B",
+   "S",
+   "S$alt0",
+   "S$alt0$step1",
+   "S$alt1",
+   "S$alt2",
+   "S$alt2$step1",
+   "S$alt3",
+   "__start__"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "doc ::= item\nitem ::= \"hi\" | ref | (alt | two)\nref ::= [a-z]\nalt ::= #x41\ntwo ::= \"z\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "doc",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "item",
+        "sp": {
+         "s": 8,
+         "e": 12,
+         "r": 1,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 3,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "item",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "hi",
+        "caseSensitive": true,
+        "sp": {
+         "s": 22,
+         "e": 26,
+         "r": 2,
+         "c": 10
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "ref",
+        "sp": {
+         "s": 29,
+         "e": 32,
+         "r": 2,
+         "c": 17
+        }
+       }
+      ],
+      [
+       {
+        "kind": "group",
+        "alts": [
+         [
+          {
+           "kind": "ref",
+           "name": "alt",
+           "sp": {
+            "s": 36,
+            "e": 39,
+            "r": 2,
+            "c": 24
+           }
+          }
+         ],
+         [
+          {
+           "kind": "ref",
+           "name": "two",
+           "sp": {
+            "s": 42,
+            "e": 45,
+            "r": 2,
+            "c": 30
+           }
+          }
+         ]
+        ],
+        "sp": {
+         "s": 35,
+         "e": 46,
+         "r": 2,
+         "c": 23
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 13,
+      "e": 17,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "ref",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0061-\\u007a]",
+        "flags": "",
+        "sp": {
+         "s": 55,
+         "e": 60,
+         "r": 3,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 47,
+      "e": 50,
+      "r": 3,
+      "c": 1
+     }
+    },
+    {
+     "name": "alt",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "A",
+        "caseSensitive": true,
+        "sp": {
+         "s": 69,
+         "e": 73,
+         "r": 4,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 61,
+      "e": 64,
+      "r": 4,
+      "c": 1
+     }
+    },
+    {
+     "name": "two",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "z",
+        "caseSensitive": true,
+        "sp": {
+         "s": 82,
+         "e": 85,
+         "r": 5,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 74,
+      "e": 77,
+      "r": 5,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "_gen1_group",
+   "doc",
+   "item",
+   "ref"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "/* A small arithmetic expression language, in W3C EBNF.\n   Precedence is expressed by layering: Expr over Term over Factor. */\n\nExpr   ::= Term ( ( \"+\" | \"-\" ) Term )*\nTerm   ::= Factor ( ( \"*\" | \"/\" ) Factor )*\nFactor ::= NR | \"(\" Expr \")\"\n",
+  "ir": {
+   "productions": [
+    {
+     "name": "Expr",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "Term",
+        "sp": {
+         "s": 139,
+         "e": 143,
+         "r": 4,
+         "c": 12
+        }
+       },
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "group",
+         "alts": [
+          [
+           {
+            "kind": "group",
+            "alts": [
+             [
+              {
+               "kind": "term",
+               "literal": "+",
+               "caseSensitive": true,
+               "sp": {
+                "s": 148,
+                "e": 151,
+                "r": 4,
+                "c": 21
+               }
+              }
+             ],
+             [
+              {
+               "kind": "term",
+               "literal": "-",
+               "caseSensitive": true,
+               "sp": {
+                "s": 154,
+                "e": 157,
+                "r": 4,
+                "c": 27
+               }
+              }
+             ]
+            ],
+            "sp": {
+             "s": 146,
+             "e": 159,
+             "r": 4,
+             "c": 19
+            }
+           },
+           {
+            "kind": "ref",
+            "name": "Term",
+            "sp": {
+             "s": 160,
+             "e": 164,
+             "r": 4,
+             "c": 33
+            }
+           }
+          ]
+         ],
+         "sp": {
+          "s": 144,
+          "e": 166,
+          "r": 4,
+          "c": 17
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 128,
+      "e": 132,
+      "r": 4,
+      "c": 1
+     }
+    },
+    {
+     "name": "Term",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "Factor",
+        "sp": {
+         "s": 179,
+         "e": 185,
+         "r": 5,
+         "c": 12
+        }
+       },
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "group",
+         "alts": [
+          [
+           {
+            "kind": "group",
+            "alts": [
+             [
+              {
+               "kind": "term",
+               "literal": "*",
+               "caseSensitive": true,
+               "sp": {
+                "s": 190,
+                "e": 193,
+                "r": 5,
+                "c": 23
+               }
+              }
+             ],
+             [
+              {
+               "kind": "term",
+               "literal": "/",
+               "caseSensitive": true,
+               "sp": {
+                "s": 196,
+                "e": 199,
+                "r": 5,
+                "c": 29
+               }
+              }
+             ]
+            ],
+            "sp": {
+             "s": 188,
+             "e": 201,
+             "r": 5,
+             "c": 21
+            }
+           },
+           {
+            "kind": "ref",
+            "name": "Factor",
+            "sp": {
+             "s": 202,
+             "e": 208,
+             "r": 5,
+             "c": 35
+            }
+           }
+          ]
+         ],
+         "sp": {
+          "s": 186,
+          "e": 210,
+          "r": 5,
+          "c": 19
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 168,
+      "e": 172,
+      "r": 5,
+      "c": 1
+     }
+    },
+    {
+     "name": "Factor",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "NR",
+        "sp": {
+         "s": 223,
+         "e": 225,
+         "r": 6,
+         "c": 12
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "(",
+        "caseSensitive": true,
+        "sp": {
+         "s": 228,
+         "e": 231,
+         "r": 6,
+         "c": 17
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "Expr",
+        "sp": {
+         "s": 232,
+         "e": 236,
+         "r": 6,
+         "c": 21
+        }
+       },
+       {
+        "kind": "term",
+        "literal": ")",
+        "caseSensitive": true,
+        "sp": {
+         "s": 237,
+         "e": 240,
+         "r": 6,
+         "c": 26
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 212,
+      "e": 218,
+      "r": 6,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "Expr",
+   "Expr$alt0",
+   "Expr$alt0$step1",
+   "Expr$alt1",
+   "Expr$alt1$step1",
+   "Expr$alt1$step2",
+   "Factor",
+   "Factor$alt0",
+   "Factor$alt1",
+   "Factor$alt1$step1",
+   "Term",
+   "Term$alt0",
+   "Term$alt1",
+   "Term$alt1$step1",
+   "__start__",
+   "_gen10_group",
+   "_gen11_group",
+   "_gen11_group$step1",
+   "_gen12_star__gen11_group",
+   "_gen12_star__gen11_group$alt0",
+   "_gen12_star__gen11_group$alt0$step1",
+   "_gen13_group",
+   "_gen14_group",
+   "_gen14_group$step1",
+   "_gen15_star__gen14_group",
+   "_gen15_star__gen14_group$alt0",
+   "_gen15_star__gen14_group$alt0$step1",
+   "_gen16_group",
+   "_gen17_group",
+   "_gen17_group$step1",
+   "_gen18_star__gen17_group",
+   "_gen18_star__gen17_group$alt0",
+   "_gen18_star__gen17_group$alt0$step1",
+   "_gen1_group",
+   "_gen2_group",
+   "_gen2_group$step1",
+   "_gen3_star__gen2_group",
+   "_gen3_star__gen2_group$alt0",
+   "_gen3_star__gen2_group$alt0$step1",
+   "_gen4_group",
+   "_gen5_group",
+   "_gen5_group$step1",
+   "_gen6_star__gen5_group",
+   "_gen6_star__gen5_group$alt0",
+   "_gen6_star__gen5_group$alt0$step1",
+   "_gen7_group",
+   "_gen8_group",
+   "_gen8_group$step1",
+   "_gen9_star__gen8_group",
+   "_gen9_star__gen8_group$alt0",
+   "_gen9_star__gen8_group$alt0$step1"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "(* The same language as expr.ebnf, written with the ISO/IEC 14977\n   spellings this front-end accepts: `=` for the definition operator,\n   `,` for concatenation, `;` as a terminator, and this comment form.\n   The operators themselves stay W3C — postfix `*`, not braces. *)\n\nexpr   = term , ( ( \"+\" | \"-\" ) , term )* ;\nterm   = factor , ( ( \"*\" | \"/\" ) , factor )* ;\nfactor = NR | \"(\" , expr , \")\" ;\n",
+  "ir": {
+   "productions": [
+    {
+     "name": "expr",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "term",
+        "sp": {
+         "s": 283,
+         "e": 287,
+         "r": 6,
+         "c": 10
+        }
+       },
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "group",
+         "alts": [
+          [
+           {
+            "kind": "group",
+            "alts": [
+             [
+              {
+               "kind": "term",
+               "literal": "+",
+               "caseSensitive": true,
+               "sp": {
+                "s": 294,
+                "e": 297,
+                "r": 6,
+                "c": 21
+               }
+              }
+             ],
+             [
+              {
+               "kind": "term",
+               "literal": "-",
+               "caseSensitive": true,
+               "sp": {
+                "s": 300,
+                "e": 303,
+                "r": 6,
+                "c": 27
+               }
+              }
+             ]
+            ],
+            "sp": {
+             "s": 292,
+             "e": 305,
+             "r": 6,
+             "c": 19
+            }
+           },
+           {
+            "kind": "ref",
+            "name": "term",
+            "sp": {
+             "s": 308,
+             "e": 312,
+             "r": 6,
+             "c": 35
+            }
+           }
+          ]
+         ],
+         "sp": {
+          "s": 290,
+          "e": 314,
+          "r": 6,
+          "c": 17
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 274,
+      "e": 278,
+      "r": 6,
+      "c": 1
+     }
+    },
+    {
+     "name": "term",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "factor",
+        "sp": {
+         "s": 327,
+         "e": 333,
+         "r": 7,
+         "c": 10
+        }
+       },
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "group",
+         "alts": [
+          [
+           {
+            "kind": "group",
+            "alts": [
+             [
+              {
+               "kind": "term",
+               "literal": "*",
+               "caseSensitive": true,
+               "sp": {
+                "s": 340,
+                "e": 343,
+                "r": 7,
+                "c": 23
+               }
+              }
+             ],
+             [
+              {
+               "kind": "term",
+               "literal": "/",
+               "caseSensitive": true,
+               "sp": {
+                "s": 346,
+                "e": 349,
+                "r": 7,
+                "c": 29
+               }
+              }
+             ]
+            ],
+            "sp": {
+             "s": 338,
+             "e": 351,
+             "r": 7,
+             "c": 21
+            }
+           },
+           {
+            "kind": "ref",
+            "name": "factor",
+            "sp": {
+             "s": 354,
+             "e": 360,
+             "r": 7,
+             "c": 37
+            }
+           }
+          ]
+         ],
+         "sp": {
+          "s": 336,
+          "e": 362,
+          "r": 7,
+          "c": 19
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 318,
+      "e": 322,
+      "r": 7,
+      "c": 1
+     }
+    },
+    {
+     "name": "factor",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "NR",
+        "sp": {
+         "s": 375,
+         "e": 377,
+         "r": 8,
+         "c": 10
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "(",
+        "caseSensitive": true,
+        "sp": {
+         "s": 380,
+         "e": 383,
+         "r": 8,
+         "c": 15
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "expr",
+        "sp": {
+         "s": 386,
+         "e": 390,
+         "r": 8,
+         "c": 21
+        }
+       },
+       {
+        "kind": "term",
+        "literal": ")",
+        "caseSensitive": true,
+        "sp": {
+         "s": 393,
+         "e": 396,
+         "r": 8,
+         "c": 28
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 366,
+      "e": 372,
+      "r": 8,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "__start__",
+   "_gen10_group",
+   "_gen11_group",
+   "_gen11_group$step1",
+   "_gen12_star__gen11_group",
+   "_gen12_star__gen11_group$alt0",
+   "_gen12_star__gen11_group$alt0$step1",
+   "_gen13_group",
+   "_gen14_group",
+   "_gen14_group$step1",
+   "_gen15_star__gen14_group",
+   "_gen15_star__gen14_group$alt0",
+   "_gen15_star__gen14_group$alt0$step1",
+   "_gen16_group",
+   "_gen17_group",
+   "_gen17_group$step1",
+   "_gen18_star__gen17_group",
+   "_gen18_star__gen17_group$alt0",
+   "_gen18_star__gen17_group$alt0$step1",
+   "_gen1_group",
+   "_gen2_group",
+   "_gen2_group$step1",
+   "_gen3_star__gen2_group",
+   "_gen3_star__gen2_group$alt0",
+   "_gen3_star__gen2_group$alt0$step1",
+   "_gen4_group",
+   "_gen5_group",
+   "_gen5_group$step1",
+   "_gen6_star__gen5_group",
+   "_gen6_star__gen5_group$alt0",
+   "_gen6_star__gen5_group$alt0$step1",
+   "_gen7_group",
+   "_gen8_group",
+   "_gen8_group$step1",
+   "_gen9_star__gen8_group",
+   "_gen9_star__gen8_group$alt0",
+   "_gen9_star__gen8_group$alt0$step1",
+   "expr",
+   "expr$alt0",
+   "expr$alt0$step1",
+   "expr$alt1",
+   "expr$alt1$step1",
+   "expr$alt1$step2",
+   "factor",
+   "factor$alt0",
+   "factor$alt1",
+   "factor$alt1$step1",
+   "term",
+   "term$alt0",
+   "term$alt1",
+   "term$alt1$step1"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "/* A JSON subset in W3C EBNF. `ST` and `NR` are the engine's built-in\n   string and number lexer tokens, so this grammar is about structure\n   rather than about re-deriving scalars character by character. */\n\nJson   ::= Value\nValue  ::= Object | Array | ST | NR | \"true\" | \"false\" | \"null\"\nObject ::= \"{\" ( Member ( \",\" Member )* )? \"}\"\nMember ::= ST \":\" Value\nArray  ::= \"[\" ( Value ( \",\" Value )* )? \"]\"\n",
+  "ir": {
+   "productions": [
+    {
+     "name": "Json",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "Value",
+        "sp": {
+         "s": 220,
+         "e": 225,
+         "r": 5,
+         "c": 12
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 209,
+      "e": 213,
+      "r": 5,
+      "c": 1
+     }
+    },
+    {
+     "name": "Value",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "Object",
+        "sp": {
+         "s": 237,
+         "e": 243,
+         "r": 6,
+         "c": 12
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "Array",
+        "sp": {
+         "s": 246,
+         "e": 251,
+         "r": 6,
+         "c": 21
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "ST",
+        "sp": {
+         "s": 254,
+         "e": 256,
+         "r": 6,
+         "c": 29
+        }
+       }
+      ],
+      [
+       {
+        "kind": "ref",
+        "name": "NR",
+        "sp": {
+         "s": 259,
+         "e": 261,
+         "r": 6,
+         "c": 34
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "true",
+        "caseSensitive": true,
+        "sp": {
+         "s": 264,
+         "e": 270,
+         "r": 6,
+         "c": 39
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "false",
+        "caseSensitive": true,
+        "sp": {
+         "s": 273,
+         "e": 280,
+         "r": 6,
+         "c": 48
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "null",
+        "caseSensitive": true,
+        "sp": {
+         "s": 283,
+         "e": 289,
+         "r": 6,
+         "c": 58
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 226,
+      "e": 231,
+      "r": 6,
+      "c": 1
+     }
+    },
+    {
+     "name": "Object",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "{",
+        "caseSensitive": true,
+        "sp": {
+         "s": 301,
+         "e": 304,
+         "r": 7,
+         "c": 12
+        }
+       },
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "group",
+         "alts": [
+          [
+           {
+            "kind": "ref",
+            "name": "Member",
+            "sp": {
+             "s": 307,
+             "e": 313,
+             "r": 7,
+             "c": 18
+            }
+           },
+           {
+            "kind": "star",
+            "inner": {
+             "kind": "group",
+             "alts": [
+              [
+               {
+                "kind": "term",
+                "literal": ",",
+                "caseSensitive": true,
+                "sp": {
+                 "s": 316,
+                 "e": 319,
+                 "r": 7,
+                 "c": 27
+                }
+               },
+               {
+                "kind": "ref",
+                "name": "Member",
+                "sp": {
+                 "s": 320,
+                 "e": 326,
+                 "r": 7,
+                 "c": 31
+                }
+               }
+              ]
+             ],
+             "sp": {
+              "s": 314,
+              "e": 328,
+              "r": 7,
+              "c": 25
+             }
+            }
+           }
+          ]
+         ],
+         "sp": {
+          "s": 305,
+          "e": 331,
+          "r": 7,
+          "c": 16
+         }
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "}",
+        "caseSensitive": true,
+        "sp": {
+         "s": 333,
+         "e": 336,
+         "r": 7,
+         "c": 44
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 290,
+      "e": 296,
+      "r": 7,
+      "c": 1
+     }
+    },
+    {
+     "name": "Member",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "ST",
+        "sp": {
+         "s": 348,
+         "e": 350,
+         "r": 8,
+         "c": 12
+        }
+       },
+       {
+        "kind": "term",
+        "literal": ":",
+        "caseSensitive": true,
+        "sp": {
+         "s": 351,
+         "e": 354,
+         "r": 8,
+         "c": 15
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "Value",
+        "sp": {
+         "s": 355,
+         "e": 360,
+         "r": 8,
+         "c": 19
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 337,
+      "e": 343,
+      "r": 8,
+      "c": 1
+     }
+    },
+    {
+     "name": "Array",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "[",
+        "caseSensitive": true,
+        "sp": {
+         "s": 372,
+         "e": 375,
+         "r": 9,
+         "c": 12
+        }
+       },
+       {
+        "kind": "opt",
+        "inner": {
+         "kind": "group",
+         "alts": [
+          [
+           {
+            "kind": "ref",
+            "name": "Value",
+            "sp": {
+             "s": 378,
+             "e": 383,
+             "r": 9,
+             "c": 18
+            }
+           },
+           {
+            "kind": "star",
+            "inner": {
+             "kind": "group",
+             "alts": [
+              [
+               {
+                "kind": "term",
+                "literal": ",",
+                "caseSensitive": true,
+                "sp": {
+                 "s": 386,
+                 "e": 389,
+                 "r": 9,
+                 "c": 26
+                }
+               },
+               {
+                "kind": "ref",
+                "name": "Value",
+                "sp": {
+                 "s": 390,
+                 "e": 395,
+                 "r": 9,
+                 "c": 30
+                }
+               }
+              ]
+             ],
+             "sp": {
+              "s": 384,
+              "e": 397,
+              "r": 9,
+              "c": 24
+             }
+            }
+           }
+          ]
+         ],
+         "sp": {
+          "s": 376,
+          "e": 400,
+          "r": 9,
+          "c": 16
+         }
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "]",
+        "caseSensitive": true,
+        "sp": {
+         "s": 402,
+         "e": 405,
+         "r": 9,
+         "c": 42
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 361,
+      "e": 366,
+      "r": 9,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "Array",
+   "Array$step1",
+   "Json",
+   "Member",
+   "Object",
+   "Object$step1",
+   "Value",
+   "Value$alt0",
+   "Value$alt0$step1",
+   "Value$alt1",
+   "Value$alt1$step1",
+   "Value$alt2",
+   "Value$alt3",
+   "Value$alt4",
+   "Value$alt5",
+   "Value$alt6",
+   "__start__",
+   "_gen10_star__gen9_group",
+   "_gen10_star__gen9_group$alt0",
+   "_gen10_star__gen9_group$alt0$step1",
+   "_gen11_group",
+   "_gen11_group$step1",
+   "_gen12_opt__gen11_group",
+   "_gen13_group",
+   "_gen14_star__gen13_group",
+   "_gen14_star__gen13_group$alt0",
+   "_gen14_star__gen13_group$alt0$step1",
+   "_gen15_group",
+   "_gen15_group$step1",
+   "_gen16_opt__gen15_group",
+   "_gen1_group",
+   "_gen2_star__gen1_group",
+   "_gen2_star__gen1_group$alt0",
+   "_gen2_star__gen1_group$alt0$step1",
+   "_gen3_group",
+   "_gen3_group$step1",
+   "_gen4_opt__gen3_group",
+   "_gen5_group",
+   "_gen6_star__gen5_group",
+   "_gen6_star__gen5_group$alt0",
+   "_gen6_star__gen5_group$alt0$step1",
+   "_gen7_group",
+   "_gen7_group$step1",
+   "_gen8_opt__gen7_group",
+   "_gen9_group"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "/* Character classes, in the style the XML specification uses them:\n   an explicit start class, then a wider continuation class, with code\n   points written in the #xNN form. */\n\nName      ::= NameStart NameChar*\nNameStart ::= [A-Z] | \"_\" | [a-z] | [#xC0-#xD6]\nNameChar  ::= NameStart | \"-\" | \".\" | [0-9] | #xB7\n",
+  "ir": {
+   "productions": [
+    {
+     "name": "Name",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "NameStart",
+        "sp": {
+         "s": 193,
+         "e": 202,
+         "r": 5,
+         "c": 15
+        }
+       },
+       {
+        "kind": "star",
+        "inner": {
+         "kind": "ref",
+         "name": "NameChar",
+         "sp": {
+          "s": 203,
+          "e": 211,
+          "r": 5,
+          "c": 25
+         }
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 179,
+      "e": 183,
+      "r": 5,
+      "c": 1
+     }
+    },
+    {
+     "name": "NameStart",
+     "alts": [
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0041-\\u005a]",
+        "flags": "",
+        "sp": {
+         "s": 227,
+         "e": 232,
+         "r": 6,
+         "c": 15
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "_",
+        "caseSensitive": true,
+        "sp": {
+         "s": 235,
+         "e": 238,
+         "r": 6,
+         "c": 23
+        }
+       }
+      ],
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0061-\\u007a]",
+        "flags": "",
+        "sp": {
+         "s": 241,
+         "e": 246,
+         "r": 6,
+         "c": 29
+        }
+       }
+      ],
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u00c0-\\u00d6]",
+        "flags": "",
+        "sp": {
+         "s": 249,
+         "e": 260,
+         "r": 6,
+         "c": 37
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 213,
+      "e": 222,
+      "r": 6,
+      "c": 1
+     }
+    },
+    {
+     "name": "NameChar",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "NameStart",
+        "sp": {
+         "s": 275,
+         "e": 284,
+         "r": 7,
+         "c": 15
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "-",
+        "caseSensitive": true,
+        "sp": {
+         "s": 287,
+         "e": 290,
+         "r": 7,
+         "c": 27
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": ".",
+        "caseSensitive": true,
+        "sp": {
+         "s": 293,
+         "e": 296,
+         "r": 7,
+         "c": 33
+        }
+       }
+      ],
+      [
+       {
+        "kind": "regex",
+        "pattern": "[\\u0030-\\u0039]",
+        "flags": "",
+        "sp": {
+         "s": 299,
+         "e": 304,
+         "r": 7,
+         "c": 39
+        }
+       }
+      ],
+      [
+       {
+        "kind": "term",
+        "literal": "·",
+        "caseSensitive": true,
+        "sp": {
+         "s": 307,
+         "e": 311,
+         "r": 7,
+         "c": 47
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 261,
+      "e": 269,
+      "r": 7,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "Name",
+   "NameChar",
+   "NameStart",
+   "__start__",
+   "_gen1_star_NameChar",
+   "_gen1_star_NameChar$alt0",
+   "_gen1_star_NameChar$alt0$step1",
+   "_gen2_star_NameChar",
+   "_gen2_star_NameChar$alt0",
+   "_gen2_star_NameChar$alt0$step1",
+   "_gen3_star_NameChar",
+   "_gen3_star_NameChar$alt0",
+   "_gen3_star_NameChar$alt0$step1",
+   "_gen4_star_NameChar",
+   "_gen4_star_NameChar$alt0",
+   "_gen4_star_NameChar$alt0$step1"
+  ],
+  "emptyOk": false
+ },
+ {
+  "src": "Foo! ::= \"x\"",
+  "error": "ebnf: 'Foo!' at line 1, column 1 is not a valid symbol name. A name starts with a letter or underscore and continues with letters, digits, '_', '.' or '-'.",
+  "line": 1,
+  "column": 1
+ },
+ {
+  "src": "A ::= B - C\nB ::= \"b\"\nC ::= \"c\"",
+  "error": "ebnf: subtraction ('-') at line 1, column 7 is not supported. The grammar IR has no difference operator, so 'A - B' cannot be compiled. Where both sides are single characters, write the difference as a negated character class instead — '[^abc]' rather than 'Char - [abc]'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= B -C\nB ::= \"b\"",
+  "error": "ebnf: subtraction ('-') at line 1, column 7 is not supported. The grammar IR has no difference operator, so 'A - B' cannot be compiled. Where both sides are single characters, write the difference as a negated character class instead — '[^abc]' rather than 'Char - [abc]'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= ? anything at all ?",
+  "error": "ebnf: unexpected '?' at line 1, column 7. A postfix '?' must follow an element, and ISO 14977 special sequences ('? … ?') are not supported: their content is undefined by the standard, so there is nothing to compile.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= { \"x\" }",
+  "error": "ebnf: ISO 14977 bracket repetition '{ … }' at line 1, column 7 is not supported. This front-end reads W3C EBNF, where repetition is postfix: write 'A*' for '{ A }' and 'A?' for the ISO '[ A ]'. ('[ … ]' is a character class here, which is why the ISO reading cannot also be offered.)",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= } \"x\"",
+  "error": "ebnf: ISO 14977 bracket repetition '{ … }' at line 1, column 7 is not supported. This front-end reads W3C EBNF, where repetition is postfix: write 'A*' for '{ A }' and 'A?' for the ISO '[ A ]'. ('[ … ]' is a character class here, which is why the ISO reading cannot also be offered.)",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= [a-z",
+  "error": "ebnf: stray '[' at line 1, column 7. A character class must open and close on one line, contain no ']' (write a literal ']' as the string \"]\"), and is written '[a-z]', '[^<&]' or '[#x20-#x7E]'. ISO 14977's optional '[ A ]' is not supported — write 'A?'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= *\"x\"",
+  "error": "ebnf: unexpected '*' at line 1, column 7. Repetition in this dialect is postfix — 'A*' and 'A+', not ABNF's '*A' and '1*A'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= +\"x\"",
+  "error": "ebnf: unexpected '+' at line 1, column 7. Repetition in this dialect is postfix — 'A*' and 'A+', not ABNF's '*A' and '1*A'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= ( \"x\"",
+  "error": "ebnf: unclosed group — '(' has no matching ')' at line 1, column 7.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= \"\"",
+  "error": "ebnf: empty string literal at line 1, column 7 matches nothing. W3C EBNF has no epsilon terminal; to make a construct optional write 'A?'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= ''",
+  "error": "ebnf: empty string literal at line 1, column 7 matches nothing. W3C EBNF has no epsilon terminal; to make a construct optional write 'A?'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= []",
+  "error": "ebnf: empty character class '[]' at line 1, column 7 matches nothing.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= [z-a]",
+  "error": "ebnf: reversed range in character class '[z-a]' at line 1, column 7 — the low end must not be greater than the high end.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= #x110000",
+  "error": "ebnf: '#x110000' at line 1, column 7 is not a Unicode code point (the maximum is #x10FFFF).",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= [#x0-#x110000]",
+  "error": "ebnf: '#x110000' at line 1, column 7 is not a Unicode code point (the maximum is #x10FFFF).",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= [#x]",
+  "error": "ebnf: '#x' with no hex digits in character class '[#x]' at line 1, column 7.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= #x",
+  "error": "ebnf: '#x' at line 1, column 7 is not a valid symbol name. A name starts with a letter or underscore and continues with letters, digits, '_', '.' or '-'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= #X41",
+  "error": "ebnf: '#X41' at line 1, column 7 is not a valid symbol name. A name starts with a letter or underscore and continues with letters, digits, '_', '.' or '-'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= [#X20-#X7E]",
+  "error": "ebnf: reversed range in character class '[#X20-#X7E]' at line 1, column 7 — the low end must not be greater than the high end.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= \"x\"\nA ::= \"y\"",
+  "error": "ebnf: rule 'A' is defined more than once. EBNF has no incremental-alternatives operator; combine the definitions into one production with '|' between the alternatives."
+ },
+ {
+  "src": "A ::= \"x\"? | \"y\"?",
+  "error": "ebnf: rule 'A' has 2 alternatives that each match nothing, so the grammar is ambiguous: an empty input has more than one derivation and no lookahead can choose between them. Make at most one alternative optional — '(A | B)?' rather than 'A? | B?'."
+ },
+ {
+  "src": "A ::= (\"x\"? | \"y\"?) \"y\"",
+  "error": "ebnf: a group in rule 'A' has 2 alternatives that each match nothing, so the grammar is ambiguous: an empty input has more than one derivation and no lookahead can choose between them. Make at most one alternative optional — '(A | B)?' rather than 'A? | B?'."
+ },
+ {
+  "src": "A ::= ((\"x\"? | \"y\"?) \"z\") \"w\"",
+  "error": "ebnf: a group in rule 'A' has 2 alternatives that each match nothing, so the grammar is ambiguous: an empty input has more than one derivation and no lookahead can choose between them. Make at most one alternative optional — '(A | B)?' rather than 'A? | B?'."
+ },
+ {
+  "src": "A ::= | \"x\"",
+  "error": "ebnf: empty alternative at line 1, column 7. Both dialects require an expression on each side of '|', and this notation has no epsilon terminal; to make a construct optional write 'A?' rather than 'A |'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= \"x\" |",
+  "error": "ebnf: empty alternative at line 1, column 12. Both dialects require an expression on each side of '|', and this notation has no epsilon terminal; to make a construct optional write 'A?' rather than 'A |'.",
+  "line": 1,
+  "column": 12
+ },
+ {
+  "src": "A = ;",
+  "error": "ebnf: empty alternative at line 1, column 5. Both dialects require an expression on each side of '|', and this notation has no epsilon terminal; to make a construct optional write 'A?' rather than 'A |'.",
+  "line": 1,
+  "column": 5
+ },
+ {
+  "src": "A ::= ()",
+  "error": "ebnf: empty alternative at line 1, column 8. Both dialects require an expression on each side of '|', and this notation has no epsilon terminal; to make a construct optional write 'A?' rather than 'A |'.",
+  "line": 1,
+  "column": 8
+ },
+ {
+  "src": "A = , \"x\";",
+  "error": "ebnf: leading comma at line 1, column 5. In ISO 14977 the comma separates concatenated items, so it must appear between two of them — 'A , B', not ', A'.",
+  "line": 1,
+  "column": 5
+ },
+ {
+  "src": "A ::= \"x\" , ",
+  "error": "ebnf: parse error at line 1, column 13: \u001b[91m[tabnas/unexpected]:\u001b[0m unexpected character(s): ",
+  "line": 1,
+  "column": 13
+ },
+ {
+  "src": "A ::= B",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 6,
+         "e": 7,
+         "r": 1,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "compileError": "ebnf: rule 'A' references unknown rule 'B'"
+ },
+ {
+  "src": "A ::= A \"x\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "ref",
+        "name": "A",
+        "sp": {
+         "s": 6,
+         "e": 7,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 8,
+         "e": 11,
+         "r": 1,
+         "c": 9
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "compileError": "ebnf: rule 'A' is purely left-recursive (no seed alternative); cannot eliminate"
+ },
+ {
+  "src": "",
+  "error": "ebnf: no productions found"
+ },
+ {
+  "src": "/* nothing but a comment */",
+  "error": "ebnf: no productions found"
+ },
+ {
+  "src": "   \n\t\n",
+  "error": "ebnf: no productions found"
+ },
+ {
+  "src": "A ::= \"x\" ]",
+  "error": "ebnf: stray '\"x\"' at line 1, column 7. A character class must open and close on one line, contain no ']' (write a literal ']' as the string \"]\"), and is written '[a-z]', '[^<&]' or '[#x20-#x7E]'. ISO 14977's optional '[ A ]' is not supported — write 'A?'.",
+  "line": 1,
+  "column": 7
+ },
+ {
+  "src": "A ::= \"x\" ) \"y\"",
+  "error": "ebnf: parse error at line 1, column 11: \u001b[91m[tabnas/unexpected]:\u001b[0m unexpected character(s): )",
+  "line": 1,
+  "column": 11
+ },
+ {
+  "src": "A",
+  "error": "ebnf: parse error at line 1, column 1: \u001b[91m[tabnas/unexpected]:\u001b[0m unexpected character(s): A",
+  "line": 1,
+  "column": 1
+ },
+ {
+  "src": "A ::=",
+  "error": "ebnf: empty alternative at line 1, column 6. Both dialects require an expression on each side of '|', and this notation has no epsilon terminal; to make a construct optional write 'A?' rather than 'A |'.",
+  "line": 1,
+  "column": 6
+ },
+ {
+  "src": "::= \"x\"",
+  "error": "ebnf: parse error at line 1, column 1: \u001b[91m[tabnas/unexpected]:\u001b[0m unexpected character(s): ::=",
+  "line": 1,
+  "column": 1
+ },
+ {
+  "src": "\"x\" ::= \"y\"",
+  "error": "ebnf: parse error at line 1, column 1: \u001b[91m[tabnas/unexpected]:\u001b[0m unexpected character(s): \"x\"",
+  "line": 1,
+  "column": 1
+ },
+ {
+  "src": "A ::= \"x\" B C\nB ::= \"b\"\nC ::= \"c\"",
+  "ir": {
+   "productions": [
+    {
+     "name": "A",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "x",
+        "caseSensitive": true,
+        "sp": {
+         "s": 6,
+         "e": 9,
+         "r": 1,
+         "c": 7
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "B",
+        "sp": {
+         "s": 10,
+         "e": 11,
+         "r": 1,
+         "c": 11
+        }
+       },
+       {
+        "kind": "ref",
+        "name": "C",
+        "sp": {
+         "s": 12,
+         "e": 13,
+         "r": 1,
+         "c": 13
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 0,
+      "e": 1,
+      "r": 1,
+      "c": 1
+     }
+    },
+    {
+     "name": "B",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "b",
+        "caseSensitive": true,
+        "sp": {
+         "s": 20,
+         "e": 23,
+         "r": 2,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 14,
+      "e": 15,
+      "r": 2,
+      "c": 1
+     }
+    },
+    {
+     "name": "C",
+     "alts": [
+      [
+       {
+        "kind": "term",
+        "literal": "c",
+        "caseSensitive": true,
+        "sp": {
+         "s": 30,
+         "e": 33,
+         "r": 3,
+         "c": 7
+        }
+       }
+      ]
+     ],
+     "sp": {
+      "s": 24,
+      "e": 25,
+      "r": 3,
+      "c": 1
+     }
+    }
+   ]
+  },
+  "rules": [
+   "A",
+   "__start__"
+  ],
+  "emptyOk": false
+ }
+]

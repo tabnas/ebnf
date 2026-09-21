@@ -329,7 +329,9 @@ describe('docs-style', () => {
     // is withheld now: go/README.md was tabnas/zon's and has been
     // written for this package, so the exemption is unreached and stays
     // only because the map it reads can fill again.
-    for (const r of ['README.md', 'ts/README.md', 'go/README.md']) {
+    for (const r of [
+      'README.md', 'ts/README.md', 'go/README.md', 'rs/README.md',
+    ]) {
       if (Fs.existsSync(Path.join(REPO, r)) && !(r in WITHHELD)) {
         Assert.ok(files.includes(r), `${r} exists and is gated`)
       }
