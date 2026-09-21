@@ -1,4 +1,5 @@
-# Build and test both implementations. ts/ is canonical; go/ is a port of it.
+# Build and test all three implementations. ts/ is canonical; go/ and
+# rs/ are ports of it.
 #
 # Local build/test resolve the unpublished @tabnas siblings via
 # node_modules symlinks, wired by scripts/link.sh in the sibling
@@ -13,15 +14,16 @@
 
 .PHONY: all build test clean build-ts test-ts clean-ts publish-ts reset \
         build-go test-go \
+        build-rs test-rs clean-rs version-rs \
         prose prose-counts
 
 all: build test
 
-build: build-ts build-go
+build: build-ts build-go build-rs
 
-test: test-ts test-go
+test: test-ts test-go test-rs
 
-clean: clean-ts
+clean: clean-ts clean-rs
 
 # --- TypeScript (package in ts/) ---
 build-ts:
@@ -39,6 +41,39 @@ build-go:
 
 test-go:
 	cd go && go test ./...
+
+# --- Rust (crate in rs/) ---
+#
+# The engine and the shared compiler are PATH dependencies on sibling
+# checkouts (tabnas/parser and tabnas/bnf), and tabnas/support is a
+# dev-dependency; neither is published, so clone all three beside this
+# repository first. `ci/rust/run.sh` is the full gate.
+build-rs:
+	cd rs && cargo build --all-targets
+
+# `--all-targets` does NOT include doctests -- cargo documents the
+# selector as "Test all targets (does not include doctests)" -- and
+# rs/README.md is doctested, so both commands are needed.
+test-rs:
+	cd rs && cargo test --all-targets && cargo test --doc
+	cd rs && cargo clippy --all-targets --all-features -- -D warnings
+
+clean-rs:
+	cd rs && cargo clean
+
+# Set the Rust crate version: make version-rs V=x.y.z
+#
+# Rewrites the two sites in the crate and then runs cargo once so it
+# refreshes rs/Cargo.lock, which ci/rust/run.sh holds to rs/Cargo.toml.
+# The three other version sites (ts/package.json, ts/src/ebnf.ts,
+# go/ebnf.go) are the release orchestrator's, and
+# rs/tests/version_test.rs fails the build when any of the five drift.
+version-rs:
+	@test -n "$(V)" || (echo "Usage: make version-rs V=x.y.z" && exit 1)
+	sed -i.bak 's/^version = ".*"/version = "$(V)"/' rs/Cargo.toml
+	sed -i.bak 's/^pub const VERSION: &str = ".*";/pub const VERSION: \&str = "$(V)";/' rs/src/lib.rs
+	rm -f rs/Cargo.toml.bak rs/src/lib.rs.bak
+	cd rs && cargo metadata --format-version 1 --offline >/dev/null
 
 # Publish the TypeScript package at its current package.json version.
 publish-ts: test-ts

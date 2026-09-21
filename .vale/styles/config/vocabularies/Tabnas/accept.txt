@@ -43,6 +43,7 @@ syntaxes
 [Tt]okenised
 [Uu]nboundedly
 [Uu]nfactored
+[Uu]ntrusted
 [Uu]ntyped
 [Uu]nvalidated
 [Ww]irth

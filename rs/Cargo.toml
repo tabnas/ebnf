@@ -1,0 +1,36 @@
+# The Rust port of @tabnas/ebnf. ts/ is canonical; go/ and this crate
+# track it. `version` MUST equal ts/package.json "version", `VERSION` in
+# ts/src/ebnf.ts and `const VERSION` in go/ebnf.go:
+# tests/version_test.rs fails the build when they drift.
+
+[package]
+name = "tabnas-ebnf"
+version = "0.1.6"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "EBNF (W3C, plus the non-colliding ISO 14977 spellings) grammar front-end for the tabnas parsing engine"
+repository = "https://github.com/tabnas/ebnf"
+
+[lib]
+name = "tabnas_ebnf"
+path = "src/lib.rs"
+
+[dependencies]
+# The engine and the shared BNF-family compiler are consumed as SIBLING
+# CHECKOUTS, the standard tabnas development model: clone
+# https://github.com/tabnas/parser and https://github.com/tabnas/bnf next
+# to this repo. Neither crate is published, so there is no registry
+# version to fall back on.
+tabnas = { path = "../../parser/rs" }
+tabnas-bnf = { path = "../../bnf/rs" }
+indexmap = "2"
+regex = "1.10"
+serde_json = { version = "1.0", features = ["preserve_order"] }
+
+[dev-dependencies]
+# The shared fixture loader and runner: the Rust half of @tabnas/support,
+# another sibling checkout (https://github.com/tabnas/support). The
+# `serde_json` feature is the bridge from the engine's `Value::to_json`
+# to the runner's fixture value.
+tabnas-support = { path = "../../support/rs", features = ["serde_json"] }
