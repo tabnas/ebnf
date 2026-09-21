@@ -16,6 +16,15 @@ use crate::converter::{at, EbnfParseError, Loc};
 /// The largest code point Unicode has.
 const MAX_CODE_POINT: u32 = 0x10_FFFF;
 
+/// The first and last code points of the UTF-16 surrogate block.
+///
+/// A code point in this range names half of a surrogate pair rather than
+/// a character. A Rust `String` is Unicode SCALAR VALUES, which exclude
+/// the block by definition, so no well-formed Rust string can contain
+/// one and the `regex` crate refuses an escape that names one.
+const SURROGATE_LO: u32 = 0xD800;
+const SURROGATE_HI: u32 = 0xDFFF;
+
 /// The replacement character, written where a Rust `String` cannot hold
 /// what the source named.
 ///
@@ -204,6 +213,59 @@ pub(crate) fn parse_char_class(
         }
         parts.push(Part { lo, hi: lo });
         k += 1;
+    }
+
+    // A class denotes a set of CHARACTERS, and a surrogate code point
+    // names no character: a Rust `String` holds scalar values, so no
+    // input this class is ever matched against can contain one. Trimming
+    // the surrogate block off each end therefore leaves the set of
+    // characters the class accepts EXACTLY as written, and is what keeps
+    // the emitted pattern something `regex` will compile -- it refuses
+    // an escape naming a surrogate outright, which made `[#xD800]`
+    // convert cleanly and then fail at install.
+    //
+    // A range that merely SPANS the block (`[#xD7FF-#xE000]`) has scalar
+    // ends and is left exactly as written; splitting it would change the
+    // pattern text without changing the characters it matches.
+    let mut parts: Vec<Part> = parts
+        .into_iter()
+        .filter_map(|part| {
+            let lo = if (SURROGATE_LO..=SURROGATE_HI).contains(&part.lo) {
+                SURROGATE_HI + 1
+            } else {
+                part.lo
+            };
+            let hi = if (SURROGATE_LO..=SURROGATE_HI).contains(&part.hi) {
+                SURROGATE_LO - 1
+            } else {
+                part.hi
+            };
+            (lo <= hi).then_some(Part { lo, hi })
+        })
+        .collect();
+
+    // Nothing survived, so every member named an unrepresentable code
+    // point.
+    let mut negated = negated;
+    if parts.is_empty() {
+        if negated {
+            // The complement of a set of nothing is every character
+            // there is, which is what `[^#xD800]` matches in the
+            // canonical runtime too.
+            negated = false;
+            parts.push(Part {
+                lo: 0,
+                hi: MAX_CODE_POINT,
+            });
+        } else {
+            // Answer the replacement character, which is what the
+            // standalone `#xD800` path answers for the same boundary.
+            // Recorded in `DIVERGENCE.md`.
+            parts.push(Part {
+                lo: REPLACEMENT as u32,
+                hi: REPLACEMENT as u32,
+            });
+        }
     }
 
     // Above the BMP a `\uXXXX` escape is not enough; `\u{…}` is, and in

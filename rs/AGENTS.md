@@ -154,21 +154,58 @@ The FIRST rejection wins: the engine may try further alternatives, and
 the diagnostic a reader wants is the one for the construct they actually
 wrote. The slot is cleared at the start of every parse.
 
-## The depth cap is measured, not guessed
+## The depth caps are measured, not guessed
 
-`MAX_GROUP_DEPTH` is 520 rule levels, about 129 nested groups. The
-number was measured: on the unoptimised profile, in one of the 2 MiB
-threads `cargo test` runs a test on, 240 nested groups parses and 250
-overflows the stack and ABORTS the process. The first draft of this port
-used 2048, copied from the ABNF crate, and `cargo test` aborted.
+Two caps, on two different resources, because bounding one and not the
+other bounds nothing.
 
-129 is deliberately one past 128, the shared compiler's own limit on
-element nesting, so a grammar of 128 nested groups is refused BY THE
-COMPILER with the better diagnostic, and this cap only catches what is
-deeper still. `the_group_cap_admits_129_and_refuses_130` in
-`tests/untrusted_test.rs` is the test that would have caught the first
-draft: it READS a grammar at the cap rather than only asserting that a
-deeper one is refused.
+`MAX_GROUP_DEPTH` is 520 RULE levels, about 129 nested groups. It bounds
+the ENGINE's own stack while the source is read, and is checked where a
+group opens. The number was measured: on the unoptimised profile, in one
+of the 2 MiB threads `cargo test` runs a test on, 240 nested groups
+parses and 250 overflows the stack and ABORTS the process. The first
+draft of this port used 2048, copied from the ABNF crate, and `cargo
+test` aborted.
+
+`MAX_NEST_DEPTH` is 130 NESTING levels. It bounds the TREE that reading
+the source builds, which is what everything downstream of the parse
+walks recursively: `Value::to_json`, `integral`, serde's `from_value`
+and the default drop of a `Value`. Measured the same way: 390 stacked
+postfix operators parses and 400 aborts, inside `from_value`.
+
+The second cap exists because the first one does not reach. A group
+costs four rule levels and a postfix operator costs one, so `A ::= "x"`
+followed by four hundred question marks nests the IR 401 deep at a rule
+depth of 406 -- nowhere near 520, and an uncatchable abort on untrusted
+input. Counting only groups also missed the mixture: 129 nested groups,
+which the group cap admits, carrying two operators each nest 388 deep
+and aborted.
+
+So the nesting cap counts a group and a postfix operator ALIKE, and is
+checked as each group closes (`@atom-group-close`) and as each operator
+is read (`@post-opt`, `@post-star`, `@post-plus`). Reading it there
+rather than once the postfix chain has closed is deliberate: a chain is
+one rule level per operator, so a source of thousands would otherwise
+run the engine's stack out before any count could be taken.
+
+The count is exact rather than an estimate. Two registers on the parse
+context carry it: `ebnfNest` is the depth of the element that just
+completed, and `ebnfLevelMax` is the deepest element at the current
+group level, which a group takes one more than when it closes. A group
+rule saves the enclosing level's value in its OWN `u` bag and puts it
+back at close, so the register is stack disciplined without a stack.
+`n` would not do: the engine inherits it DOWNWARD, and a postfix
+operator at an outer level is read after its subtree has finished.
+
+130 is deliberately one past 128, the shared compiler's own limit on
+element nesting, so a grammar of 128 nested levels is refused BY THE
+COMPILER with the better diagnostic, and these caps only catch what is
+deeper still. `the_group_cap_admits_129_and_refuses_130`,
+`the_nest_cap_admits_129_postfix_operators_and_refuses_130` and
+`groups_and_postfix_operators_share_one_nesting_cap` in
+`tests/untrusted_test.rs` are the tests that would have caught each
+draft: every one READS a grammar at the cap rather than only asserting
+that a deeper one is refused.
 
 ## Parity is held against a recorded oracle
 

@@ -83,6 +83,64 @@ pub(crate) const DEPTH_MESSAGE: &str =
 /// tell it apart from an ordinary engine rejection.
 pub(crate) const DEPTH_CODE: &str = "ebnf_group_depth";
 
+/// How deep the IR this front-end builds may NEST.
+///
+/// [`MAX_GROUP_DEPTH`] bounds the engine's own rule stack while the
+/// source is read. This bounds the tree that reading it BUILDS, which
+/// is a different resource and the one that actually runs out first: a
+/// group nests the IR once per group, and a postfix operator nests it
+/// once per operator, so `A ::= "x"` followed by N question marks
+/// builds an element nested N deep while costing only N rule levels.
+/// Everything downstream of the parse walks that nesting recursively --
+/// `Value::to_json`, `integral`, serde's `from_value`, and the default
+/// drop of a `Value` -- and a Rust stack that runs out ABORTS the
+/// process rather than unwinding.
+///
+/// MEASURED, not guessed, on the unoptimised profile in one of the 2
+/// MiB threads `cargo test` runs a test on. The narrowest of those
+/// walks is serde's, and it is reached first:
+///
+/// | source | element nesting | result |
+/// |---|---|---|
+/// | `A ::= "x"` and 390 `?` | 391 | parses |
+/// | `A ::= "x"` and 400 `?` | 401 | aborts, inside `serde_json::from_value` |
+/// | 129 nested groups, one `?` each | 259 | parses |
+/// | 129 nested groups, two `?` each | 388 | aborts |
+///
+/// A group level costs about 1.6 times what a postfix level costs, so
+/// the worst case for a given nesting depth is a source of nothing but
+/// groups. At the cap that worst case sits about 1.9 times inside the
+/// measured abort, which is the margin [`MAX_GROUP_DEPTH`] already
+/// carries.
+///
+/// The number is the SAME boundary [`MAX_GROUP_DEPTH`] draws for
+/// groups, written in the units the IR nests in: 129 nested groups
+/// around a terminal nest elements 130 deep. A grammar at 128 is still
+/// refused BY THE COMPILER, whose `MAX_ELEMENT_DEPTH` is 128 and whose
+/// diagnostic names the rule, so this cap only catches what is deeper
+/// still -- now for every construct that nests, not only for groups.
+pub(crate) const MAX_NEST_DEPTH: usize = 130;
+
+/// The diagnostic raised when [`MAX_NEST_DEPTH`] is exceeded.
+pub(crate) const NEST_MESSAGE: &str =
+    "ebnf: grammar nests elements more than 130 deep, which is past what this front-end will \
+     build. Split the rule into named rules.";
+
+/// The error code carried by the nesting refusal, so the converter can
+/// tell it apart from an ordinary engine rejection.
+pub(crate) const NEST_CODE: &str = "ebnf_nest_depth";
+
+/// Context key: the nesting depth of the element most recently
+/// completed. A terminal is 1, and every group and every postfix
+/// operator wrapped around it adds one.
+const NEST_KEY: &str = "ebnfNest";
+
+/// Context key: the greatest element depth completed at the CURRENT
+/// group level. A group takes one more than this when it closes. Saved
+/// and restored by the group's own rule, so the value is stack
+/// disciplined without a stack of its own.
+const LEVEL_KEY: &str = "ebnfLevelMax";
+
 /// The error code carried out of a named rejection.
 ///
 /// Every construct this dialect refuses is refused from inside the rule
@@ -312,6 +370,61 @@ fn push_node(rule: &Rule, value: Value) {
     if let Some(list) = rule.node.borrow_mut().as_array_mut() {
         list.push(value);
     }
+}
+
+// ---- nesting depth --------------------------------------------------
+//
+// The IR nests once per group and once per postfix operator, and the
+// walks over it are recursive, so the depth is tracked AS IT IS BUILT
+// and refused at [`MAX_NEST_DEPTH`] before anything deeper exists.
+//
+// Two registers on the parse context are enough, because the parse is
+// depth first and a postfix chain never contains a group:
+//
+// - [`NEST_KEY`] is the depth of the element that just completed, which
+//   at any point an action reads it is the atom the enclosing `item`
+//   is about to wrap.
+// - [`LEVEL_KEY`] is the greatest depth completed at the current group
+//   level, which is what a group takes one more than when it closes.
+//   A group rule saves the enclosing level's value in its OWN `u` bag
+//   at open and puts it back at close, so the register is stack
+//   disciplined without a stack.
+
+/// Read a `usize` register off the parse context, absent meaning zero.
+fn register(context: &Context, key: &str) -> usize {
+    match context.u.get(key) {
+        Some(Value::Number(number)) if 0.0 <= *number => *number as usize,
+        _ => 0,
+    }
+}
+
+/// Write a `usize` register onto the parse context.
+fn set_register(context: &mut Context, key: &str, value: usize) {
+    context
+        .u
+        .insert(key.to_string(), Value::Number(value as f64));
+}
+
+/// Refuse a source whose IR would nest past [`MAX_NEST_DEPTH`].
+fn check_nest(depth: usize) -> Result<(), ActionError> {
+    if MAX_NEST_DEPTH < depth {
+        return Err(ActionError::new(NEST_CODE, NEST_MESSAGE));
+    }
+    Ok(())
+}
+
+/// One postfix operator, wrapping the atom the enclosing `item` holds
+/// one level deeper.
+///
+/// Checked HERE, as each operator is read, rather than once the chain
+/// has closed: a chain is one rule level per operator, so a source of
+/// thousands of them would otherwise run the engine's own stack out
+/// before any count could be taken.
+fn wrap_one_deeper(context: &mut Context) -> Result<(), ActionError> {
+    let depth = register(context, NEST_KEY) + 1;
+    check_nest(depth)?;
+    set_register(context, NEST_KEY, depth);
+    Ok(())
 }
 
 /// The token a matched open slot holds, cloned so the rule stays
@@ -633,9 +746,16 @@ fn register_refs(parser: &mut Tabnas) {
         bag.insert("atom".into(), atom);
         Ok(())
     });
-    parser.state_action_ref("@item-bc", |rule, _context| {
+    parser.state_action_ref("@item-bc", |rule, context| {
         if !matches!(rule.u.get("got"), Some(Value::Bool(true))) {
             return Ok(());
+        }
+        // The postfix chain has closed, so the register now holds this
+        // element's own depth. A group one level out takes one more than
+        // the deepest element at this level.
+        let depth = register(context, NEST_KEY);
+        if register(context, LEVEL_KEY) < depth {
+            set_register(context, LEVEL_KEY, depth);
         }
         let Some(atom) = rule.u.get("atom").cloned().filter(|a| !a.is_undefined()) else {
             return Ok(());
@@ -666,15 +786,18 @@ fn register_refs(parser: &mut Tabnas) {
         set_node(rule, Value::array(Vec::new()));
         Ok(())
     });
-    parser.action_with_context("@post-opt", |rule, _context| {
+    parser.action_with_context("@post-opt", |rule, context| {
+        wrap_one_deeper(context)?;
         push_node(rule, Value::String("opt".into()));
         Ok(())
     });
-    parser.action_with_context("@post-star", |rule, _context| {
+    parser.action_with_context("@post-star", |rule, context| {
+        wrap_one_deeper(context)?;
         push_node(rule, Value::String("star".into()));
         Ok(())
     });
-    parser.action_with_context("@post-plus", |rule, _context| {
+    parser.action_with_context("@post-plus", |rule, context| {
+        wrap_one_deeper(context)?;
         push_node(rule, Value::String("plus".into()));
         Ok(())
     });
@@ -690,8 +813,12 @@ fn register_refs(parser: &mut Tabnas) {
     });
 
     // --- atom ---
-    parser.state_action_ref("@atom-bo", |rule, _context| {
+    parser.state_action_ref("@atom-bo", |rule, context| {
         set_node(rule, Value::Undefined);
+        // Every atom is a terminal until `@atom-lp` says otherwise, and
+        // a terminal nests one deep. `@atom-group-close` overwrites this
+        // with the group's own depth.
+        set_register(context, NEST_KEY, 1);
         let bag = rule.u_mut();
         bag.insert("group".into(), Value::Bool(false));
         Ok(())
@@ -766,13 +893,20 @@ fn register_refs(parser: &mut Tabnas) {
         );
         Ok(())
     });
-    parser.action_with_context("@atom-lp", |rule, _context| {
+    parser.action_with_context("@atom-lp", |rule, context| {
         if MAX_GROUP_DEPTH < rule.d {
             return Err(ActionError::new(DEPTH_CODE, DEPTH_MESSAGE));
         }
+        // This group becomes the current nesting level: remember the
+        // enclosing level's running maximum on THIS rule, so the close
+        // can put it back, and start counting the group's contents from
+        // nothing.
+        let outer = register(context, LEVEL_KEY);
+        set_register(context, LEVEL_KEY, 0);
         let span = open_token(rule, 0).and_then(|token| span_of(Some(&token)));
         let loc = loc_of(rule.o.first());
         let bag = rule.u_mut();
+        bag.insert("outerMax".into(), Value::Number(outer as f64));
         bag.insert("group".into(), Value::Bool(true));
         bag.insert("lp".into(), span.unwrap_or(Value::Undefined));
         bag.insert(
@@ -788,7 +922,17 @@ fn register_refs(parser: &mut Tabnas) {
     parser.alt_condition("@atom-group-c", |rule, _context| {
         matches!(rule.u.get("group"), Some(Value::Bool(true)))
     });
-    parser.action_with_context("@atom-group-close", |rule, _context| {
+    parser.action_with_context("@atom-group-close", |rule, context| {
+        // The group nests one deeper than the deepest element it holds.
+        // Put the enclosing level's running maximum back before leaving.
+        let inner = register(context, LEVEL_KEY);
+        let outer = match rule.u.get("outerMax") {
+            Some(Value::Number(number)) if 0.0 <= *number => *number as usize,
+            _ => 0,
+        };
+        set_register(context, LEVEL_KEY, outer);
+        check_nest(inner + 1)?;
+        set_register(context, NEST_KEY, inner + 1);
         let alts = rule.child_node.clone();
         let open = rule
             .u
@@ -1080,7 +1224,7 @@ pub(crate) enum RawError {
     /// The engine rejected the source.
     Engine(Box<TabnasError>),
     /// The parser itself could not be built, or the source nests past
-    /// [`MAX_GROUP_DEPTH`].
+    /// [`MAX_GROUP_DEPTH`] or [`MAX_NEST_DEPTH`].
     Message(String),
 }
 
@@ -1104,6 +1248,7 @@ pub(crate) fn parse_ebnf_raw(src: &str) -> Result<Vec<Value>, RawError> {
             None => RawError::Message(error.to_string()),
         }),
         Err(error) if DEPTH_CODE == error.code => Err(RawError::Message(DEPTH_MESSAGE.to_string())),
+        Err(error) if NEST_CODE == error.code => Err(RawError::Message(NEST_MESSAGE.to_string())),
         Err(error) => Err(RawError::Engine(Box::new(error))),
     }
 }

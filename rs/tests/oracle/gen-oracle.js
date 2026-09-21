@@ -4,7 +4,10 @@
 const Fs = require('node:fs')
 const Path = require('node:path')
 
-const REPO = '/home/user/ebnf'
+// The repository root, derived from where this script sits
+// (`rs/tests/oracle/`) rather than hard coded, so the documented
+// regeneration command works in a clone at any path and in CI.
+const REPO = Path.resolve(__dirname, '..', '..', '..')
 const { parseEbnf, ebnfConvert } = require(Path.join(REPO, 'ts', 'dist', 'ebnf.js'))
 
 const fixtures = ['expr.ebnf', 'iso-style.ebnf', 'json-subset.ebnf', 'name.ebnf']

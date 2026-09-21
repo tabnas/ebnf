@@ -57,6 +57,82 @@ fn a_surrogate_code_point_becomes_the_replacement_character() {
     assert_eq!(element["sp"]["c"], 7);
 }
 
+/// The same boundary inside a CHARACTER CLASS, which reaches different
+/// machinery: a class lowers to a regular expression, and the `regex`
+/// crate refuses an escape naming a surrogate outright where JavaScript
+/// and Go both compile one.
+///
+/// Measured: TypeScript emits `[\ud800]` and installs it; Go emits
+/// `[\x{d800}]` and installs it; this port trims the surrogate block off
+/// each end, which leaves the set of characters the class matches
+/// exactly as written, because no input a Rust parser is handed can hold
+/// a surrogate.
+#[test]
+fn a_surrogate_inside_a_class_is_trimmed_rather_than_emitted() {
+    let pattern = |src: &str| {
+        ir(src)["productions"][0]["alts"][0][0]["pattern"]
+            .as_str()
+            .expect("a class lowers to a regex element")
+            .to_string()
+    };
+    // A range with a surrogate at one end keeps every character it named.
+    assert_eq!(pattern("A ::= [#x0-#xD800]"), "[\\u0000-\\ud7ff]");
+    assert_eq!(
+        pattern("A ::= [#xD800-#x10FFFF]"),
+        "[\\u{e000}-\\u{10ffff}]"
+    );
+    // A surrogate beside a real member simply goes.
+    assert_eq!(pattern("A ::= [#x41#xD800]"), "[\\u0041]");
+    // A class naming nothing else falls back to U+FFFD, which is what
+    // the standalone `#xD800` path answers.
+    assert_eq!(pattern("A ::= [#xD800]"), "[\\ufffd]");
+    assert_eq!(pattern("A ::= [#xD800-#xDFFF]"), "[\\ufffd]");
+    // ...and NEGATED, the complement of nothing is everything.
+    assert_eq!(pattern("A ::= [^#xD800]"), "[\\u{0}-\\u{10ffff}]");
+}
+
+/// The half of that boundary which is NOT a divergence, and the reason
+/// the entry exists: every one of these grammars now INSTALLS, as it
+/// does in both other runtimes. Emitting the surrogate escape converted
+/// cleanly and then failed here, with the regex crate's own wording
+/// about an internal token name.
+#[test]
+fn a_class_naming_a_surrogate_still_installs() {
+    for src in [
+        "A ::= [#xD800]",
+        "A ::= [#xD800-#xDFFF]",
+        "A ::= [#x41#xD800]",
+        "A ::= [^#xD800]",
+        "A ::= [#x0-#xD800]",
+        "A ::= [#xD800-#x10FFFF]",
+    ] {
+        engine_for(src).unwrap_or_else(|error| panic!("{src:?} must install: {error}"));
+    }
+}
+
+/// The CONTROL: a class that spans the surrogate block has scalar ends,
+/// so it is left exactly as written. Without this, "trim surrogates"
+/// could widen into "rewrite any class that touches the block".
+#[test]
+fn a_class_spanning_the_surrogate_block_is_left_alone() {
+    let element = ir("A ::= [#xD7FF-#xE000]")["productions"][0]["alts"][0][0].clone();
+    assert_eq!(
+        element["pattern"], "[\\ud7ff-\\ue000]",
+        "both ends are scalar values, so nothing is trimmed"
+    );
+    // ...and the ordinary classes are untouched, spelling and flags both.
+    for (src, pattern, flags) in [
+        ("A ::= [a-z]", "[\\u0061-\\u007a]", ""),
+        ("A ::= [^<&]", "[^\\u003c\\u0026]", "u"),
+        ("A ::= [#x20-#x7E]", "[\\u0020-\\u007e]", ""),
+        ("A ::= [#x10000-#x10FFFF]", "[\\u{10000}-\\u{10ffff}]", "u"),
+    ] {
+        let element = ir(src)["productions"][0]["alts"][0][0].clone();
+        assert_eq!(element["pattern"], pattern, "{src}");
+        assert_eq!(element["flags"], flags, "{src}");
+    }
+}
+
 /// The CONTROL for the test above: a code point Unicode does have is
 /// carried through exactly, so "surrogates become U+FFFD" cannot widen
 /// into "anything unusual does".
@@ -211,9 +287,10 @@ fn a_grammar_nested_past_the_compilers_limit_is_refused_by_name() {
 
 #[test]
 fn a_grammar_nested_past_this_front_ends_cap_is_refused_before_it_is_built() {
-    // This crate's own cap, on the FRONT END, so nothing that deep is
-    // ever built. TypeScript raises a catchable stack-overflow error
-    // several thousand levels further on; Go accepts every depth tried.
+    // This crate's own RULE-STACK cap, on the FRONT END, so nothing that
+    // deep is ever built. TypeScript raises a catchable stack-overflow
+    // error several thousand levels further on; Go accepts every depth
+    // tried.
     let error = parse_ebnf(&nested(5000)).expect_err("5000 deep is refused");
     assert_eq!(
         error.message,
@@ -222,6 +299,78 @@ fn a_grammar_nested_past_this_front_ends_cap_is_refused_before_it_is_built() {
     // ...and the front-end still reads everything the shared compiler
     // would accept, so the cap never takes the better diagnostic away.
     assert!(parse_ebnf(&nested(129)).is_ok());
+}
+
+/// The other cap, on how deep the TREE the parse builds may nest.
+///
+/// A group costs four rule levels and a postfix operator costs one, so
+/// the rule-stack cap above never sees a run of operators: `A ::= "x"`
+/// and four hundred of them nested the IR 401 deep at a rule depth of
+/// 406, and ABORTED the process inside `serde_json::from_value`.
+///
+/// Measured: TypeScript parses 3000 stacked operators and raises a
+/// catchable `Maximum call stack size exceeded` at 5000; Go parses
+/// 100000; this port refuses the 130th.
+#[test]
+fn a_run_of_postfix_operators_is_refused_before_it_is_built() {
+    let stacked = |count: usize| format!("A ::= \"x\"{}", "?".repeat(count));
+    assert!(
+        parse_ebnf(&stacked(129)).is_ok(),
+        "129 operators nest 130 deep, which is the cap"
+    );
+    for count in [130, 3_000, 5_000] {
+        let error = parse_ebnf(&stacked(count)).expect_err("past the cap");
+        assert_eq!(
+            error.message,
+            "ebnf: grammar nests elements more than 130 deep, which is past what this front-end \
+             will build. Split the rule into named rules.",
+            "{count} operators"
+        );
+    }
+}
+
+/// Groups and postfix operators nest the same tree, so one budget covers
+/// both. This is the case a per-construct cap misses: 129 nested groups
+/// sit exactly AT the group cap, and two operators per group then nest
+/// the IR 388 deep, which aborted.
+///
+/// Measured: TypeScript and Go parse every row; this port admits 43
+/// groups of two and refuses 44.
+#[test]
+fn groups_and_postfix_operators_are_counted_against_one_cap() {
+    let mixed = |depth: usize, ops: usize| {
+        format!(
+            "top ::= {}\"x\"{}",
+            "( ".repeat(depth),
+            format!(" ){}", "?".repeat(ops)).repeat(depth)
+        )
+    };
+    assert!(
+        parse_ebnf(&mixed(43, 2)).is_ok(),
+        "1 + 43 * (one group + two operators) == 130, exactly the cap"
+    );
+    for (depth, ops) in [(44, 2), (129, 2)] {
+        let error = parse_ebnf(&mixed(depth, ops)).expect_err("past the cap");
+        assert!(
+            error.message.contains("nests elements more than 130"),
+            "{depth} groups of {ops}: {}",
+            error.message
+        );
+    }
+}
+
+/// The CONTROL for both caps: the recursions they do NOT bound.
+///
+/// Alternation and concatenation build a FLAT list however wide they
+/// run, and this dialect has no prefix operator at all, so neither
+/// needs a cap and neither may quietly acquire one.
+#[test]
+fn width_is_not_depth_and_carries_no_cap() {
+    let wide: Vec<String> = (0..2_000).map(|index| format!("\"t{index}\"")).collect();
+    let grammar = parse_ebnf(&format!("A ::= {}", wide.join(" | "))).expect("parses");
+    assert_eq!(grammar.productions[0].alts.len(), 2_000);
+    let grammar = parse_ebnf(&format!("A ::= {}", wide.join(" "))).expect("parses");
+    assert_eq!(grammar.productions[0].alts[0].len(), 2_000);
 }
 
 // ---- 5. a failure is returned, never raised -------------------------

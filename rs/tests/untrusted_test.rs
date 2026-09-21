@@ -11,6 +11,7 @@
 
 mod common;
 
+use std::fmt::Write as _;
 use std::time::Instant;
 
 use common::convert;
@@ -113,6 +114,122 @@ fn the_group_cap_admits_129_and_refuses_130() {
     assert!(message.contains("nests too deeply"), "{message}");
 }
 
+/// The reported input: a terminal followed by thousands of postfix
+/// operators.
+///
+/// Every operator nests the IR one deeper, and everything downstream of
+/// the parse walks that nesting recursively, so before the cap this
+/// source ABORTED the process. Measured on the unoptimised profile in a
+/// 2 MiB thread: 390 operators parsed and 400 overflowed the stack
+/// inside `serde_json::from_value`. A refusal a caller can catch is the
+/// only acceptable answer.
+#[test]
+fn thousands_of_postfix_operators_are_refused_rather_than_aborting() {
+    for count in [400, 5_000, 100_000] {
+        let message = refused(&format!("A ::= \"x\"{}", "?".repeat(count)));
+        assert!(
+            message.contains("nests elements more than 130"),
+            "{message}"
+        );
+    }
+}
+
+/// The cap itself, at the exact operator it admits and the one it
+/// refuses.
+///
+/// Read AT the cap rather than only past it: a cap nobody reaches up to
+/// is a cap nobody has measured. A terminal is one level, so 129
+/// operators nest the IR 130 deep, which is the same boundary
+/// `the_group_cap_admits_129_and_refuses_130` draws for groups.
+#[test]
+fn the_nest_cap_admits_129_postfix_operators_and_refuses_130() {
+    let stacked = |count: usize| format!("A ::= \"x\"{}", "?".repeat(count));
+    let grammar = parse_ebnf(&stacked(129)).expect("129 postfix operators is inside the cap");
+    assert_eq!(grammar.productions.len(), 1);
+    let message = refused(&stacked(130));
+    assert!(
+        message.contains("nests elements more than 130"),
+        "{message}"
+    );
+}
+
+/// Groups and postfix operators nest the SAME tree, so they are counted
+/// against the same cap rather than each against its own.
+///
+/// This is the case a per-construct guard misses: at 129 nested groups,
+/// which the group cap admits, two postfix operators per group nest the
+/// IR 388 deep and aborted the process before this cap existed. The
+/// boundary is read at the cap here too: 43 groups of two operators
+/// nest exactly 130 deep.
+#[test]
+fn groups_and_postfix_operators_share_one_nesting_cap() {
+    let nested = |depth: usize, ops: usize| {
+        format!(
+            "top ::= {}\"x\"{}",
+            "( ".repeat(depth),
+            format!(" ){}", "?".repeat(ops)).repeat(depth)
+        )
+    };
+    // 1 + 43 * (1 group + 2 operators) == 130, exactly the cap.
+    assert!(
+        parse_ebnf(&nested(43, 2)).is_ok(),
+        "43 groups of two operators nest 130 deep, which the cap admits"
+    );
+    for (depth, ops) in [(44, 2), (129, 2), (129, 3), (60, 5)] {
+        let message = refused(&nested(depth, ops));
+        assert!(
+            message.contains("nests elements more than 130"),
+            "{depth} groups of {ops}: {message}"
+        );
+    }
+}
+
+/// The recursions the cap does NOT have to bound, asserted rather than
+/// assumed.
+///
+/// A guard that covers one recursive descent and not its siblings is not
+/// a guard, so the siblings are measured: alternation and concatenation
+/// build a FLAT list, one level deep however wide they run, and this
+/// dialect has no prefix operator at all.
+#[test]
+fn alternation_and_concatenation_do_not_nest() {
+    let alts: Vec<String> = (0..3_000).map(|index| format!("\"t{index}\"")).collect();
+    let grammar = parse_ebnf(&format!("A ::= {}", alts.join(" | "))).expect("parses");
+    assert_eq!(grammar.productions[0].alts.len(), 3_000);
+    assert_eq!(grammar.productions[0].alts[0].len(), 1, "one level deep");
+
+    let grammar = parse_ebnf(&format!("A ::= {}", alts.join(" "))).expect("parses");
+    assert_eq!(grammar.productions[0].alts.len(), 1);
+    assert_eq!(
+        grammar.productions[0].alts[0].len(),
+        3_000,
+        "one level deep"
+    );
+}
+
+/// Repetition in this dialect is postfix only, so there is no prefix
+/// descent to bound: every operator in prefix position is refused by
+/// name, by the same rejection channel as any other construct.
+#[test]
+fn this_dialect_has_no_prefix_operators() {
+    for (src, names) in [
+        ("A ::= *\"x\"", "Repetition in this dialect is postfix"),
+        ("A ::= +\"x\"", "Repetition in this dialect is postfix"),
+        ("A ::= ?\"x\"", "A postfix '?' must follow an element"),
+        ("A ::= -\"x\"", "subtraction ('-')"),
+    ] {
+        let message = refused(src);
+        assert!(message.contains(names), "{src}: {message}");
+    }
+    // And a run of them is refused just as fast, rather than descending.
+    for lead in ['*', '+', '?', '-'] {
+        refused(&format!(
+            "A ::= {}\"x\"",
+            std::iter::repeat_n(lead, 20_000).collect::<String>()
+        ));
+    }
+}
+
 #[test]
 fn a_very_long_literal_is_read_without_super_linear_cost() {
     // Same work, ten times the input: the cost has to stay close to
@@ -146,10 +263,14 @@ fn a_very_long_literal_is_read_without_super_linear_cost() {
 
 #[test]
 fn a_grammar_of_many_productions_is_read_without_super_linear_cost() {
+    // Appended rather than collected from `format!`: clippy's
+    // `format_collect` is a hard error under the MSRV toolchain
+    // `ci/rust/run.sh` pins, where a newer one lets it pass.
     let build = |count: usize| -> String {
-        (0..count)
-            .map(|index| format!("R{index} ::= \"t{index}\"\n"))
-            .collect()
+        (0..count).fold(String::new(), |mut source, index| {
+            let _ = writeln!(source, "R{index} ::= \"t{index}\"");
+            source
+        })
     };
     let small = build(200);
     let large = build(2_000);

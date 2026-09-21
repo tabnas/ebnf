@@ -77,8 +77,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Use a fresh instance per grammar: installing applies lexer settings as
 well as rules, and those are instance-wide.
 
-A grammar builds a parse tree by default, one `{rule, src, kids}` node
-per rule the author wrote:
+A grammar builds a parse tree by default, of `{rule, src, kids}` nodes.
+Which productions get one is the shared compiler's decision rather than
+this front-end's: a production whose body is a single token segment is
+FOLDED into its caller and leaves no node behind, so a tree is read
+against what the compiler emits and not against the list of productions.
+`Item` below survives because `[a-z]+` is more than one token segment:
 
 ```rust
 use tabnas::Tabnas;
@@ -121,9 +125,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## The IR, and where a node came from
 
 `parse_ebnf` answers the grammar IR on its own, for a caller that wants
-to inspect or rewrite it before compiling. Every element and every
-production records where in the source it came from, so a compile
-failure carries a range and a tool can underline the offending text:
+to inspect or rewrite it before compiling. A production records where
+its NAME is, and an element that reads source of its own records the
+text it read, so a compile failure carries a range and a tool can
+underline the offending text. A postfix wrapper is the exception, in
+this runtime and in the canonical one alike: `A?` is an `opt` with no
+span, around the `A` that has one.
 
 ```rust
 use tabnas_ebnf::parse_ebnf;
@@ -196,7 +203,7 @@ grammars that work at any depth.
 | Option | Effect |
 |---|---|
 | `start` | Start rule name (default: the first production). |
-| `tag` | Group tag stamped on every emitted alt, and the prefix of every diagnostic (default `ebnf`). |
+| `tag` | Group tag stamped on every emitted alt, and the prefix the shared compiler's own diagnostics carry (default `ebnf`). A parse error is raised before these options apply and always reads `ebnf:`. |
 | `builtins` | Emit probe dispatch and tree building as engine `$`-builtin refs instead of closures, keeping the grammar function-free and serializable. |
 | `marks` | Emit a stable mark per user-rule alt, enabling `@<rule>:o\|c:<mark>` action references. |
 | `word_keywords` | Treat word-like literals as whole-word keywords, so `"option"` does not match the prefix of `optional`. |
@@ -243,16 +250,27 @@ the dialect:
 - **Source spans count bytes**, where TypeScript counts UTF-16 code
   units. A column counts Unicode scalar values, which agrees with
   TypeScript everywhere in the Basic Multilingual Plane.
-- **A surrogate code point becomes the replacement character.** `#xD800`
-  names half of a UTF-16 pair, which no Rust `String` can hold;
-  TypeScript answers a lone surrogate. The Go port does the same as this
-  one.
-- **Nested groups are refused past a documented cap.** A grammar arrives
-  from outside the system, the parse tree nests once per group, and a
-  Rust stack that runs out aborts the process rather than unwinding. The
-  cap admits 129 nested groups, one more than the shared compiler's own
-  limit on element nesting, so the compiler's better diagnostic is still
-  the one a grammar meets first.
+- **A surrogate code point names no character here.** `#xD800` names
+  half of a UTF-16 pair, which no Rust `String` can hold, so a
+  standalone `#xD800` becomes U+FFFD where TypeScript answers a lone
+  surrogate; Go answers U+FFFD too. Inside a character class the
+  surrogate block is trimmed off each end instead, which leaves the set
+  of characters the class matches exactly as written, since no input can
+  contain a surrogate either: `[#x0-#xD800]` emits `[\u0000-\ud7ff]`,
+  and a class naming nothing else falls back to U+FFFD. TypeScript and
+  Go both emit the surrogate escape and compile it; the `regex` crate
+  refuses one outright, so emitting it made a grammar that converted
+  cleanly and then failed to install.
+- **Nesting is refused past a documented cap.** A grammar arrives from
+  outside the system, the IR nests once per group AND once per postfix
+  operator, and everything downstream of the parse walks that nesting
+  recursively, so a Rust stack that runs out aborts the process rather
+  than unwinding. Groups and postfix operators are therefore counted
+  against one budget, 130 levels of it: 129 nested groups around a
+  terminal, or 129 stacked postfix operators, or any mixture that nests
+  as deep. That is one level more than the shared compiler's own limit
+  on element nesting, so the compiler's better diagnostic is still the
+  one a grammar meets first.
 - **One rule of the meta-grammar is named differently.** `ebnf_rules()`
   calls the element rule `item` where the canonical table calls it
   `elem`, because `@elem-bc` is one of the engine's own builtin action
@@ -264,8 +282,14 @@ Each difference is measured and recorded in
 
 ## Build and test
 
-Both dependencies are path dependencies on sibling checkouts, so there
-is nothing to fetch:
+Three dependencies are path dependencies on sibling checkouts: the
+engine at `../../parser/rs`, the shared compiler at `../../bnf/rs`, and
+the fixture runner `tabnas-support` at `../../support/rs`, which is a
+dev-dependency and so is needed to TEST the crate rather than to build
+it. Clone all three beside this repository, or the command below stops
+at `failed to load source for dependency 'tabnas-support'` before it
+compiles anything. The rest of the graph comes from the registry as
+usual.
 
 ```bash
 cargo test --all-targets
