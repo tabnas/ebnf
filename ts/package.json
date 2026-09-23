@@ -1,6 +1,6 @@
 {
   "name": "@tabnas/ebnf",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "main": "dist/ebnf.js",
   "type": "commonjs",
   "types": "dist/ebnf.d.ts",
@@ -54,7 +54,7 @@
     "@tabnas/parser": "*",
     "@types/node": "26.6.2",
     "typescript": "7.0.2",
-    "@tabnas/bnf": "^0.1.18"
+    "@tabnas/bnf": "^0.1.19"
   },
   "engines": {
     "node": ">=24"
