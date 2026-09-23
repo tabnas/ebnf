@@ -2,6 +2,6 @@ module github.com/tabnas/ebnf/go
 
 go 1.24.7
 
-require github.com/tabnas/bnf/go v0.1.17
+require github.com/tabnas/bnf/go v0.1.18
 
-require github.com/tabnas/parser/go v0.12.0
+require github.com/tabnas/parser/go v0.12.1
