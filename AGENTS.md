@@ -337,9 +337,12 @@ accepts the publish. Pushing a tag by hand is the orchestrator's path
 
 The steps, in order:
 
-1. Bump all **three** version sites together — `ts/package.json`, `VERSION`
-   in `ts/src/ebnf.ts` and `const VERSION` in `go/ebnf.go`. Drift is caught
-   by `ts/test/version.test.js` and `go/version_test.go`.
+1. Bump every version site together — `ts/package.json`, `VERSION` in
+   `ts/src/ebnf.ts`, `const VERSION` in `go/ebnf.go`, `version` in
+   `rs/Cargo.toml` and `pub const VERSION` in `rs/src/lib.rs` — and commit
+   the root `tabnas-ebnf` entry of `rs/Cargo.lock` that cargo rewrites to
+   match. Drift is caught by `ts/test/version.test.js`, `go/version_test.go`
+   and `rs/tests/version_test.rs`, and a stale lock by `ci/rust/run.sh`.
 2. Verify against the **published** dependencies rather than your checkout.
    The release runner installs fresh from the registry; a working tree
    usually does not, so reproduce that before believing anything:
