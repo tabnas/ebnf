@@ -26,7 +26,7 @@ tracks it. The Go port in [`../go`](../go) reads the same dialect.
 
 ## Which EBNF
 
-"EBNF" names a family, not a language. ISO/IEC 14977, W3C, Wirth and a
+"EBNF" names a family, not a language. ISO/IEC 14977, W3C, Wirth, and a
 long tail of per-tool dialects disagree on the definition operator, the
 terminator, the comment syntax and, worst, on what brackets mean.
 

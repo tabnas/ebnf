@@ -144,7 +144,7 @@ msg // => "ebnf: rule 'A' references unknown rule 'B'"
 
 **Primary dialect: W3C EBNF**, as defined in
 [XML 1.0 §6 "Notation"](https://www.w3.org/TR/xml/#sec-notation) and
-used by XPath, XQuery, XML Schema and JSONPath. Chosen because it has a
+used by XPath, XQuery, XML Schema, and JSONPath. Chosen because it has a
 real published corpus, because every one of its operators has a
 destination in the grammar IR, and because its `[…]` character class
 cannot coexist with ISO/IEC 14977's `[ … ]` optional; the dialect has

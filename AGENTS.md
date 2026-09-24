@@ -42,7 +42,7 @@ sweep, an install or a fetch, a release, a wait on CI, a benchmark, a
 script or loop you write, and anything sent to the background.
 
 - **Minimal is enough.** One line with the step and a count, such as
-  `conformance: 412/1500 (27%)`, meets it. When no total is known, print
+  `conformance: 412 of 1500 (27%)`, meets it. When no total is known, print
   what is known (the step, the current item, the elapsed time) and say the
   percentage is unknown rather than inventing one.
 - **Build it into what you write.** A script or loop prints a line per
@@ -231,10 +231,6 @@ If you are tempted to add a heuristic here: run it against
   folds a rule whose body is a single token segment into its caller.
   Tests that assert tree shape must be written against what the
   compiler emits, not against the source productions.
-- **`.github/workflows/` still carries the scaffold's dependency list**
-  (`deps: "parser debug json abnf railroad jsonic"`). It needs `bnf` and
-  does not need most of the rest. Session credentials cannot write those
-  files; a maintainer promotes the change.
 
 ## Build and test
 
@@ -341,9 +337,12 @@ accepts the publish. Pushing a tag by hand is the orchestrator's path
 
 The steps, in order:
 
-1. Bump all **three** version sites together — `ts/package.json`, `VERSION`
-   in `ts/src/ebnf.ts` and `const VERSION` in `go/ebnf.go`. Drift is caught
-   by `ts/test/version.test.js` and `go/version_test.go`.
+1. Bump every version site together — `ts/package.json`, `VERSION` in
+   `ts/src/ebnf.ts`, `const VERSION` in `go/ebnf.go`, `version` in
+   `rs/Cargo.toml` and `pub const VERSION` in `rs/src/lib.rs` — and commit
+   the root `tabnas-ebnf` entry of `rs/Cargo.lock` that cargo rewrites to
+   match. Drift is caught by `ts/test/version.test.js`, `go/version_test.go`
+   and `rs/tests/version_test.rs`, and a stale lock by `ci/rust/run.sh`.
 2. Verify against the **published** dependencies rather than your checkout.
    The release runner installs fresh from the registry; a working tree
    usually does not, so reproduce that before believing anything:
@@ -405,7 +404,8 @@ The steps, in order:
    workflow **has no test step** — it reads `main`, builds against
    already-published dependencies, publishes and tags. The bump commit's
    own CI is the only gate there is, and after the merge that is
-   `ci.yml` alone.
+   `ci.yml` and `rust.yml`, whose path filter a bump's `ts/package.json`
+   change always matches.
 
    An npm version is immutable, and a Go module tag is worse: proxy.golang.org caches module versions permanently,
    so a `go/vX.Y.Z` naming the wrong commit cannot be moved, only
