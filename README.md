@@ -73,7 +73,7 @@ can collide with the W3C reading: `=` as a definition operator, `,` as
 an explicit concatenation separator, `;` as a production terminator, and
 `(* … *)` comments. Accepting those spellings does not make this an ISO
 implementation; everything else about ISO 14977, including its
-bracket operators, its exception operator, its special sequences and its
+bracket operators, its exception operator, its special sequences, and its
 space-bearing meta-identifiers, is out.
 
 ## A first grammar
@@ -123,7 +123,7 @@ Note that `out.src` is `'helloworld'`, not `'hello world'`: the lexer
 skips whitespace between tokens, so `src` is the concatenation of what
 was matched, not a slice of the original input.
 
-## Repetition, optionals and groups
+## Repetition, optionals, and groups
 
 Repetition is **postfix** (`A?`, `A*`, `A+`) and `( … )` groups a
 sub-expression so an operator applies to the whole of it:

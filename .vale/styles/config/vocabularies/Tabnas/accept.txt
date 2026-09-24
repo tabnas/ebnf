@@ -7,17 +7,26 @@
 # CASE PAIRS ARE ONE ENTRY, WRITTEN AS A REGEX. Two plain lines make
 # Vale enforce one spelling over the other, and it then reports the
 # other as a misspelling.
+#
+# AN ACRONYM PUTS ITS CAPITALS IN THE SAME ENTRY: `(?:[Jj]son|JSON)`.
+# Vale 3.9.2 and later enforce an entry's case through Vale.Terms, so
+# `[Jj]son` alone reports every `JSON` as "Use '[Jj]son' instead of
+# 'JSON'", and a separate `JSON` line does not help: the `[Jj]son`
+# entry still claims the word.
+#
+# AN ENTRY MATCHES A WHOLE WORD. `[Ee]nder` accepts `ender` and not
+# `enders`, so a plural or a possessive is an entry of its own.
 
-[Aa]BNF
+(?:[Aa]bnf|ABNF)
 [Bb]areword
 [Dd]esugaring
 [Dd]esugars
-[Ee]bnf
+(?:[Ee]bnf|EBNF)
 [Ee]num
 [Ee]xecutably
-[Ii]R
+(?:[Ii]r|IR)
 [Jj]sonic
-[Jj]SONPath
+(?:[Jj]sonpath|JSONPath)
 [Ll]exer
 [Ll]exes
 [Ll]exing
@@ -29,7 +38,7 @@
 [Pp]arse
 [Pp]aull
 [Pp]repended
-[Rr]EADME
+(?:[Rr]eadme|README)
 [Rr]epo
 [Rr]estamped
 [Rr]estamping
@@ -51,4 +60,4 @@ syntaxes
 [Xx]Path
 [Xx]Query
 [Zz]ig
-[Zz]ON
+(?:[Zz]on|ZON)
