@@ -231,10 +231,6 @@ If you are tempted to add a heuristic here: run it against
   folds a rule whose body is a single token segment into its caller.
   Tests that assert tree shape must be written against what the
   compiler emits, not against the source productions.
-- **`.github/workflows/` still carries the scaffold's dependency list**
-  (`deps: "parser debug json abnf railroad jsonic"`). It needs `bnf` and
-  does not need most of the rest. Session credentials cannot write those
-  files; a maintainer promotes the change.
 
 ## Build and test
 
@@ -405,7 +401,8 @@ The steps, in order:
    workflow **has no test step** — it reads `main`, builds against
    already-published dependencies, publishes and tags. The bump commit's
    own CI is the only gate there is, and after the merge that is
-   `ci.yml` alone.
+   `ci.yml` and `rust.yml`, whose path filter a bump's `ts/package.json`
+   change always matches.
 
    An npm version is immutable, and a Go module tag is worse: proxy.golang.org caches module versions permanently,
    so a `go/vX.Y.Z` naming the wrong commit cannot be moved, only
