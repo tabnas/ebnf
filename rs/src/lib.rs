@@ -63,7 +63,7 @@ pub use tabnas_bnf::{
 /// release orchestrator rewrites both, and `tests/version_test.rs` fails
 /// the build if they drift. Mirrors `VERSION` in `ts/src/ebnf.ts` and
 /// `const VERSION` in `go/ebnf.go`.
-pub const VERSION: &str = "0.1.9";
+pub const VERSION: &str = "0.1.10";
 
 /// The group tag stamped on every emitted alt, and the prefix of every
 /// diagnostic this crate raises through the shared compiler.
