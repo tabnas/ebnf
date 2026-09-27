@@ -74,15 +74,16 @@ emission — lives in `@tabnas/bnf` and is shared with
 **Do not reimplement any of it here.** If a grammar compiles wrongly and
 the cause is in the second arrow, the fix belongs in `bnf`.
 
-**Repetition is replacement, never a push chain.** A tabnas alternate
-either pushes a child rule (`p:`), which opens a new stack frame that
+**Repetition is replacement, never a push chain.** When a tabnas alternate hands control to another rule,
+it either pushes a child rule (`p:`), which opens a new stack frame that
 closes when the child does, or replaces the current rule (`r:`), which
-re-enters a rule in the same frame. Push is for structure, something the
+re-enters a rule in the same frame; a terminal-only or closing alternate
+does neither. Push is for structure, something the
 tree must nest; replace is for sequence, the next item of a list. Every
 `A*` and `A+` this front end hands to `bnf` therefore has to come back
 as a same-depth `r` loop (the item inside it may push; the loop itself
-never does), so that rule depth (`d` on every engine rule) is bounded by
-the grammar's nesting and never by the input's length. A helper spelled
+never does), so that the loop's iterations add nothing to rule depth
+(`d` on every engine rule). Real recursion still nests with its input, as it should: a grammar with `node = "(" node ")" / "x"` is as deep as its brackets. What a repetition may never do is make rule depth grow with a list's length. A helper spelled
 as right recursion, `star_x = inner star_x / ε` with a frame per item,
 parses the same documents and is still wrong: a flat file of a few
 thousand records climbs past the engine's depth guard and the hosts'
