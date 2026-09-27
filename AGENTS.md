@@ -74,6 +74,41 @@ emission — lives in `@tabnas/bnf` and is shared with
 **Do not reimplement any of it here.** If a grammar compiles wrongly and
 the cause is in the second arrow, the fix belongs in `bnf`.
 
+**Repetition is replacement, never a push chain.** A tabnas alternate
+either pushes a child rule (`p:`), which opens a new stack frame that
+closes when the child does, or replaces the current rule (`r:`), which
+re-enters a rule in the same frame. Push is for structure, something the
+tree must nest; replace is for sequence, the next item of a list. Every
+`A*` and `A+` this front end hands to `bnf` therefore has to come back
+as a same-depth `r` loop (the item inside it may push; the loop itself
+never does), so that rule depth (`d` on every engine rule) is bounded by
+the grammar's nesting and never by the input's length. A helper spelled
+as right recursion, `star_x = inner star_x / ε` with a frame per item,
+parses the same documents and is still wrong: a flat file of a few
+thousand records climbs past the engine's depth guard and the hosts'
+(aless refuses at 256), rule history and memory grow with it, and the
+tree comes out nested where the source is flat. That is what `bnf`'s
+`desugar` emitted in all three runtimes when this rule was written down
+(2026-09-27); the compiler contract that replaces it belongs to `bnf`'s
+guide, not this one.
+
+What follows for this repository is a boundary, not a fix. The front end
+never emits a repetition itself and never rewrites `star` or `plus` into
+recursion in a pass of its own: not as a workaround while the compiler
+is repaired, not as an optimisation after. The IR carries `star`, `plus`
+and `opt` as elements, and the depth guarantee is `bnf`'s to keep and
+this front end's suite to check, on a long input, in every runtime. A
+test that goes red here for the compiler's reason names a `bnf` defect
+to fix there, exactly as the third criterion under "Verify your work"
+says. The meta-grammar that reads EBNF already has the shape: `prod`
+re-enters itself with `r: 'prod'` after each production, so a grammar of
+a thousand productions is read at one depth, while `post` pushes once
+per stacked operator because each operator wraps the last and the IR
+nests with it (the Rust port's `MAX_NEST_DEPTH` counts that nesting).
+Rule depth over a repetition is constant; a test that repeats an item
+ten thousand times and asserts the maximum `d` stays what a single item
+needs is the proof.
+
 `@tabnas/abnf`'s `ts/src/converter.ts` is the reference front-end; this
 package deliberately mirrors its structure (a tabnas grammar that reads
 the notation, a `parseX(src)` returning the IR, a facade that calls
