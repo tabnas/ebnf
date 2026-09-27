@@ -86,7 +86,8 @@ the grammar's nesting and never by the input's length. A helper spelled
 as right recursion, `star_x = inner star_x / ε` with a frame per item,
 parses the same documents and is still wrong: a flat file of a few
 thousand records climbs past the engine's depth guard and the hosts'
-(aless refuses at 256), rule history and memory grow with it, and the
+(aless refuses past 3,000 open rules), the rule stack and memory grow
+with it, and the
 tree comes out nested where the source is flat. That is what `bnf`'s
 `desugar` emitted in all three runtimes when this rule was written down
 (2026-09-27); the compiler contract that replaces it belongs to `bnf`'s
