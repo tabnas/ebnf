@@ -22,7 +22,7 @@ path = "src/lib.rs"
 # https://github.com/tabnas/parser and https://github.com/tabnas/bnf next
 # to this repo. Neither crate is published, so there is no registry
 # version to fall back on.
-tabnas = { path = "../../parser/rs" }
+tabnas = { package = "tabnas-parser", path = "../../parser/rs" }
 tabnas-bnf = { path = "../../bnf/rs" }
 indexmap = "2"
 regex = "1.10"
