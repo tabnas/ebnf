@@ -391,21 +391,7 @@
     }
    ]
   },
-  "rules": [
-   "A",
-   "__start__",
-   "_gen1_group",
-   "_gen2_opt__gen1_group",
-   "_gen3_star__gen2_opt__gen1_group",
-   "_gen3_star__gen2_opt__gen1_group$alt0",
-   "_gen3_star__gen2_opt__gen1_group$alt0$step1",
-   "_gen4_plus__gen3_star__gen2_opt__gen1_group",
-   "_gen4_plus__gen3_star__gen2_opt__gen1_group$step1",
-   "_gen4_star__gen3_star__gen2_opt__gen1_group",
-   "_gen4_star__gen3_star__gen2_opt__gen1_group$alt0",
-   "_gen4_star__gen3_star__gen2_opt__gen1_group$alt0$step1"
-  ],
-  "emptyOk": true
+  "compileError": "ebnf: rule 'A' has an unbounded repetition whose item can match the empty string. An unbounded repetition must consume input on every iteration."
  },
  {
   "src": "A ::= [a-z]",
