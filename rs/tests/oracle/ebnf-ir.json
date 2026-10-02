@@ -391,7 +391,7 @@
     }
    ]
   },
-  "compileError": "ebnf: rule 'A' has an unbounded repetition whose item can match the empty string. An unbounded repetition must consume input on every iteration."
+  "compileError": "ebnf: rule 'A' has an unbounded repetition whose item can succeed without consuming input. An unbounded repetition must consume input on every iteration."
  },
  {
   "src": "A ::= [a-z]",
