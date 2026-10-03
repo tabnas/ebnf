@@ -13,6 +13,11 @@ this dialect: write `A?`. The itemised list is in
 [doc/reference.md](doc/reference.md#what-is-and-is-not-supported); read
 it before writing a grammar.
 
+Postfix operators may be stacked, but every unbounded `*` or `+` layer
+must consume input on each iteration. A form such as `(A?)*` is refused
+at compile time instead of emitting a loop that can stay at one input
+position forever.
+
 ## Install
 
 ```bash

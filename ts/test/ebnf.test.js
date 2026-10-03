@@ -581,6 +581,19 @@ describe('ebnf', () => {
     })
 
 
+    it('rejects an unbounded repetition whose item may consume nothing', () => {
+      assert.throws(() => ebnf('A ::= ( "x" )?*+'), (e) => {
+        assert.ok(e instanceof EbnfCompileError)
+        assert.match(
+          e.message,
+          /unbounded repetition whose item can succeed without consuming input/,
+        )
+        return true
+      })
+      assert.doesNotThrow(() => ebnf('A ::= ( "x" )+?'))
+    })
+
+
     it('rejects an empty alternative rather than reading it as epsilon', () => {
       // Both dialects require an expression each side of `|`, and this
       // package refuses an empty literal, so accepting ε here made the
