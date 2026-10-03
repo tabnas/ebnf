@@ -169,7 +169,7 @@ make this an ISO implementation.
 | Optional | `A?` | `opt` |
 | Zero or more | `A*` | `star` |
 | One or more | `A+` | `plus` |
-| Stacked postfix | `(A)*?` | nested; an extension, since W3C never stacks them |
+| Stacked postfix | `(A+)?` | nested; an extension, since W3C never stacks them; every unbounded layer must consume input |
 | Literal, double-quoted | `"abc"` | `term`, `caseSensitive: true` |
 | Literal, single-quoted | `'abc'` | `term`, `caseSensitive: true` |
 | Character class, range | `[a-z]` | `regex` |
@@ -204,6 +204,7 @@ list compiles to an approximation.
 | ISO meta-identifier with spaces | `two words = …` | Names are one token. Falls out as a name-validation or syntax error. | `EbnfParseError` |
 | The same rule defined twice | `A ::= "x"` then `A ::= "y"` | EBNF has no incremental-alternatives operator (ABNF's `=/`); the compiler would silently take one of them. | `EbnfParseError`: `rule 'A' is defined more than once` |
 | Two alternatives that both match nothing | `A ::= "x"? \| "y"?` | The empty input has two derivations; no lookahead distinguishes them. | `EbnfParseError`: `rule 'A' has 2 alternatives that each match nothing` |
+| Unbounded repetition of an item that may consume nothing | `A ::= ("x"?)*` | Another iteration could begin at the same input position forever. | `EbnfCompileError`: `rule 'A' has an unbounded repetition whose item can succeed without consuming input` |
 | Reference to an undefined rule | `A ::= B` with no `B` | Nothing to compile. | `EbnfCompileError`: `rule 'A' references unknown rule 'B'` |
 | Purely left-recursive rule | `A ::= A "x"` | No seed alternative to anchor the iteration on. | `EbnfCompileError`: `rule 'A' is purely left-recursive` |
 

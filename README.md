@@ -281,7 +281,7 @@ and is rejected by name.
 | Optional | `A?` | IR `opt` |
 | Zero or more | `A*` | IR `star` |
 | One or more | `A+` | IR `plus` |
-| Stacked postfix | `(A)*?` | nested `opt`/`star`/`plus` |
+| Stacked postfix | `(A+)?` | nested `opt`/`star`/`plus`; each unbounded layer must consume input |
 | Literal | `"abc"`, `'abc'` | IR `term`, **case-sensitive** |
 | Character class | `[a-z]`, `[abc]`, `[-+]` | IR `regex` |
 | Negated class | `[^<&]` | IR `regex` |
@@ -312,6 +312,7 @@ the subtraction operator, and rejected.
 | The same rule defined twice | EBNF has no incremental-alternatives operator | `EbnfParseError: rule 'X' is defined more than once` |
 | Two alternatives that both match nothing | genuinely ambiguous | `EbnfParseError: rule 'X' has 2 alternatives that each match nothing` |
 | The same, inside a group: `("x"? \| "y"?)` | a group is a choice too, so the ambiguity is identical | `EbnfParseError: a group in rule 'X' has 2 alternatives that each match nothing` |
+| Unbounded repetition of an item that may consume nothing: `(A?)*`, `(A*)+` | another iteration could begin at the same input position forever | `EbnfCompileError: rule 'X' has an unbounded repetition whose item can succeed without consuming input` |
 | Empty alternative: `\| A`, `A \|`, `A = ;`, `()` | both dialects require an expression each side of `\|`, and there is no epsilon terminal | `EbnfParseError: … empty alternative …` |
 | Leading comma: `A = , B ;` | ISO's comma separates concatenated items; it is not a prefix | `EbnfParseError: … leading comma …` |
 | Uppercase code point `#X41` | W3C specifies lowercase `#x`; accepting both would widen the dialect past this table | `EbnfParseError` (unexpected token) |
