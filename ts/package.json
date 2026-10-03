@@ -40,6 +40,8 @@
   "license": "MIT",
   "files": [
     "dist",
+    "src",
+    "README.md",
     "LICENSE"
   ],
   "exports": {
@@ -47,14 +49,14 @@
   },
   "peerDependencies": {
     "@tabnas/parser": ">=0.12.8",
-    "@tabnas/bnf": ">=0.1.22"
+    "@tabnas/bnf": ">=0.1.24"
   },
   "devDependencies": {
     "@tabnas/debug": "*",
     "@tabnas/parser": "*",
     "@types/node": "26.6.2",
     "typescript": "7.0.2",
-    "@tabnas/bnf": "^0.1.22"
+    "@tabnas/bnf": "^0.1.24"
   },
   "engines": {
     "node": ">=24"
