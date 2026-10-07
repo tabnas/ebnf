@@ -1,16 +1,16 @@
 # Build and test all three implementations. ts/ is canonical; go/ and
 # rs/ are ports of it.
 #
-# Local build/test resolve the unpublished @tabnas siblings via
-# node_modules symlinks, wired by scripts/link.sh in the sibling
-# tabnas/admin checkout. The declared dependency is an ordinary `*`
-# version range, so without those symlinks a plain `npm install` gets
-# the published package instead (see AGENTS.md).
+# The @tabnas siblings are published. Local build/test can resolve them
+# from sibling checkouts instead, via node_modules symlinks wired by
+# scripts/link.sh in the sibling tabnas/admin checkout. The declared
+# dependency is an ordinary `*` version range, so without those symlinks a
+# plain `npm install` gets the published package (see AGENTS.md).
 #
-# CI has built and tested go/ since the port landed — the shared
-# polyglot-ci.yml caller detects go/ and runs a Go job per platform. Only this
-# Makefile had not caught up, so `make test` covered one of the two runtimes
-# that CI gates.
+# CI gates all three runtimes: the shared polyglot-ci.yml caller detects
+# go/ and runs a TypeScript and a Go job per platform, and
+# .github/workflows/rust.yml runs the Rust gate. `make build` and
+# `make test` cover all three as well.
 
 .PHONY: all build test clean build-ts test-ts clean-ts publish-ts reset \
         build-go test-go \
@@ -46,8 +46,9 @@ test-go:
 #
 # The engine and the shared compiler are PATH dependencies on sibling
 # checkouts (tabnas/parser and tabnas/bnf), and tabnas/support is a
-# dev-dependency; neither is published, so clone all three beside this
-# repository first. `ci/rust/run.sh` is the full gate.
+# dev-dependency. All three are on crates.io, but rs/Cargo.toml takes them
+# by path, so clone all three beside this repository first.
+# `ci/rust/run.sh` is the full gate.
 build-rs:
 	cd rs && cargo build --all-targets
 

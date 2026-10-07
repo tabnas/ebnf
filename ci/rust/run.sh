@@ -5,8 +5,9 @@
 #
 # The engine and the shared BNF-family compiler are PATH DEPENDENCIES on
 # sibling checkouts (rs/Cargo.toml: `tabnas = { package = "tabnas-parser", path = "../../parser/rs" }`
-# and `tabnas-bnf = { path = "../../bnf/rs" }`), and neither crate is
-# published, so there is no registry version to fall back on. Clone
+# and `tabnas-bnf = { path = "../../bnf/rs" }`). Both crates are on
+# crates.io, but the committed manifest names them by path alone, so
+# there is no registry version to fall back on. Clone
 # https://github.com/tabnas/parser and https://github.com/tabnas/bnf next
 # to this repo before running. The test suite also needs
 # https://github.com/tabnas/support, a dev-dependency on a third sibling.
