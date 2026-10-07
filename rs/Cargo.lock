@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "tabnas-bnf"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "indexmap",
  "regex",
@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "tabnas-ebnf"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "indexmap",
  "regex",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "tabnas-support"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "serde_json",
 ]
