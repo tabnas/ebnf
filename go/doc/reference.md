@@ -131,7 +131,7 @@ ebnf: rule 'A' is defined more than once; EBNF has no incremental-alternatives o
 
 ## What this dialect accepts
 
-The notation is the same in both runtimes, and the itemised tables live
+The notation is the same in every runtime, and the itemised tables live
 with the canonical implementation:
 
 - [Supported constructs](../../ts/doc/reference.md#supported), from

@@ -211,22 +211,22 @@ grammars that work at any depth.
 
 ## Install
 
-The `tabnas` and `tabnas-bnf` crates are not published to a registry, so
-both are consumed as **sibling checkouts**, the standard tabnas
-development model. Clone `https://github.com/tabnas/parser` and
-`https://github.com/tabnas/bnf` next to this repository and point at
-them:
+The engine is not part of this crate. Both are on crates.io, the engine
+as `tabnas-parser`, whose library is named `tabnas` in code, so add both:
 
-```toml
-[dependencies]
-tabnas-ebnf = { path = "../ebnf/rs" }
-tabnas = { package = "tabnas-parser", path = "../parser/rs" }
+```bash
+cargo add tabnas-ebnf tabnas-parser
 ```
 
 Both entries are needed. A crate's dependencies are not passed on to its
 dependents, so `tabnas-ebnf` alone does not put `tabnas` in the extern
 prelude, and the examples above that name `tabnas::Tabnas` would not
 resolve.
+
+In this repository, `Cargo.toml` takes the engine and `tabnas-bnf` by
+path from sibling checkouts instead, and the tests take `tabnas-support`
+the same way. The release workflow swaps those paths for crates.io
+versions, and drops the test-only one, when it publishes this crate.
 
 ## Differences from the canonical TypeScript
 

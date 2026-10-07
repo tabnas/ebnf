@@ -399,12 +399,15 @@ The steps, in order:
    suite then passes against unreleased code while appearing to verify the
    published one. Reinstalling is the part that matters.
 
-   One thing a clean install does **not** isolate:
-   `ts/test/doc-examples.test.*` resolves `@tabnas/*` by filesystem path
-   (`const TABNAS = path.join(REPO, '..')`), not through `node_modules`. If
-   unbuilt sibling checkouts sit beside this repo, those blocks fail with
-   `MODULE_NOT_FOUND` no matter what you installed — build the siblings, or
-   verify somewhere they are absent.
+   A clean install covers the doc examples too.
+   `ts/test/doc-examples.test.*` resolves a doc example's `require` through
+   `node_modules` first; only a `@tabnas/*` package that is not installed
+   falls back to the sibling checkout `../<x>/ts`
+   (`const TABNAS = path.join(REPO, '..')`), and `@tabnas/ebnf` itself to
+   this repository's `ts/`. The tested blocks require only `@tabnas/ebnf`
+   and `@tabnas/parser`, which `ts/package.json` declares, so they run
+   against the registry copy, unless admin's `scripts/link.sh` has linked a
+   sibling over it, in which case that sibling has to be built.
 
    `npm test` already compiles here: `ts/package.json` sets `pretest` to
    `npm run build`, which npm runs automatically. No separate build step is
@@ -418,12 +421,16 @@ The steps, in order:
    ```bash
    (
      cd go
-     go mod edit -json | grep -q '"Replace": null' || { echo 'go.mod has a replace'; exit 1; }
+     go mod edit -json | jq -e '.Replace == null' >/dev/null || { echo 'go.mod has a replace'; exit 1; }
      GOWORK=off go test -count=1 ./...
    )
    ```
 
-   `-count=1` so a cached pass cannot stand in for a release check.
+   `-count=1` so a cached pass cannot stand in for a release check. The
+   check asks `jq`, not `grep`: current Go leaves the `Replace` key out
+   when there is no replace, where older Go printed `"Replace": null`, and
+   `jq` reads a missing key as null, so the check passes on a clean
+   `go.mod` and fails on a replace either way.
 3. **Merge the bump through a reviewed PR.** That is the house convention —
    `CONTRIBUTING.md` squash-merges PRs and takes the title as the commit
    message — and what `release.yml`'s own header describes. A direct push to
