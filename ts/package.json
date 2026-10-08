@@ -1,6 +1,6 @@
 {
   "name": "@tabnas/ebnf",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "main": "dist/ebnf.js",
   "type": "commonjs",
   "types": "dist/ebnf.d.ts",
@@ -48,8 +48,8 @@
     ".": "./dist/ebnf.js"
   },
   "peerDependencies": {
-    "@tabnas/parser": ">=0.12.8",
-    "@tabnas/bnf": ">=0.1.24"
+    "@tabnas/parser": ">=0.12.11",
+    "@tabnas/bnf": ">=0.1.28"
   },
   "devDependencies": {
     "@tabnas/debug": "*",
