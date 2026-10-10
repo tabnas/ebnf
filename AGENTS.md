@@ -60,6 +60,8 @@ A quick command that finishes within 30 seconds needs nothing extra.
 `@tabnas/ebnf` is a **grammar front-end**: it parses EBNF text into the
 notation-neutral grammar IR defined by
 [`@tabnas/bnf`](https://github.com/tabnas/bnf), and does nothing else.
+Its translation parts (see "Translation") add the one arrow back: a
+render that writes the compiled spec as EBNF text.
 
 ```
 EBNF text ──parseEbnf──▶ Grammar ──bnf.emitGrammarSpec──▶ GrammarSpec
@@ -145,6 +147,10 @@ quietly dropped from the tests.
 | [`ts/test/grammar/`](ts/test/grammar/) | `.ebnf` fixtures — `expr.ebnf`, `json-subset.ebnf`, `name.ebnf`, and `iso-style.ebnf` (the same language as `expr.ebnf` in the accepted ISO spellings). |
 | [`ts/test/doc-examples.test.js`](ts/test/doc-examples.test.js) | Runs every ```js fence carrying a `// =>` assertion in the README and `ts/doc`. Shared harness, identical across tabnas repos. |
 | [`ts/test/version.test.js`](ts/test/version.test.js) | `VERSION` vs `package.json` "version". |
+| [`ts/test/translate.test.js`](ts/test/translate.test.js) | The translation parts: the embedded copies are the files, the manifest's `translate` object, and the grammar spec a host reads. |
+| [`ts/test/translate-render.test.js`](ts/test/translate-render.test.js) | The render run through the `alchemy` command `TABNAS_ALCHEMY` names, skipped without it: compiled specs written back, and changed ones refused. |
+| [`alchemy/render.alc`](alchemy/render.alc) | The render: a grammar spec written back as W3C EBNF (entry `ebnf-render`). See "Translation". |
+| [`ts/embed-translate.js`](ts/embed-translate.js) | Copies `tabnas.plugin.json` and the render into `ts/src/translate.ts`, `go/translate/` and `rs/translate/`, all three GENERATED; `npm run embed` runs it, and so does the build. |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs. |
 | [`go/`](go/) | Go port of `ts/`, shipped in v0.1.2. `go/facade.go` exports `Ebnf`, `ToSpec`, `EliminateLeftRecursion` and `Install`, plus `ParseError` / `CompileError`; `go/ebnf.go` holds `VERSION`, which `go/version_test.go` pins against `ts/package.json`. Four-quadrant docs in [`go/doc/`](go/doc/). |
 | [`rs/`](rs/) | Rust port of `ts/`, crate `tabnas-ebnf`. `rs/src/lib.rs` exports `ebnf`, `ebnf_convert`, `to_spec`, `parse_ebnf`, `emit_grammar_spec`, `ebnf_rules`, `plugin`, `VERSION`, `EbnfParseError` and `EbnfCompileError`; the meta-grammar is a tabnas rule table, as in `ts/`, not a scanner as in `go/`. See [`rs/AGENTS.md`](rs/AGENTS.md). |
@@ -225,6 +231,101 @@ behaviour, not prose: a bare ``` fence carries no assertion, so
 
 If you are tempted to add a heuristic here: run it against
 `ts/test/grammar/expr.ebnf` and `json-subset.ebnf` first.
+
+## Translation
+
+A host that translates between formats (aless, `alchemy translate`, the
+design in tabnas/transduce `docs/translation.md`) reads this format's
+parts from the `translate` object of
+[`tabnas.plugin.json`](tabnas.plugin.json): an EBNF document is read as a
+tree and written from one (`reads`, `writes`), an object (`root`), of the
+schema `grammar-spec` (`schema`), which ABNF and GBNF share, since the
+three compile through the one compiler, so a host can translate a grammar
+from one notation to another. There is no embed, so the target is
+schema-only: a host composes into the render only from a source of the
+same schema, or from a program that builds a grammar spec, and refuses
+any other source before reading it.
+
+There is no `lift` either. A lift is an alchemy program a composition runs
+over a source's events; reading an EBNF document means compiling it,
+which is the host's registry concern, as aless and alchemy-cli wire each
+format's reader. The tree a host reads is the pure-data GrammarSpec of
+`compileSpec(ebnfConvert(src, { builtins: true }), { recognition: false,
+strict: true })`, `compileSpec` being `@tabnas/bnf`'s (`compile_spec`
+over `ebnf_convert` with `builtins` on in Rust; `bnf.ToJsonic` over
+`bnf.ToPureSpec` over `Ebnf` with `Builtins` on in Go), parsed as JSON:
+the compiled rules with their tree builders as `$`-builtins, the options,
+and `meta.provenance`, which names the rule each synthesized rule came
+from. The TypeScript and Rust compilers write that text byte for byte
+alike, its keys in the order the compiler emits them, which is the
+grammar's rule order and its tokens' order, and the render reads both.
+Go's serializer writes the same spec with its keys in name order and the
+match tokens' order in a `tokenOrder` list, so a spec a Go host
+serializes has lost the rule order, which ranks the tokens (the order the
+lexer tries two tokens a place expects); the render refuses such a spec
+when its `tokenOrder` holds two tokens or more, rather than write rules
+whose tokens rank otherwise.
+
+[`alchemy/render.alc`](alchemy/render.alc) is the render, an
+[alchemy](https://github.com/tabnas/alchemy) library whose entry point
+`ebnf-render` writes a grammar spec as one W3C EBNF document, the start
+rule first. Its contract is the round trip: the text compiles back to the
+spec it was written from. The spec is a compiled grammar, not the
+grammar's text, so the render reads the compiler's shapes back into the
+notation, exactly as ABNF's and GBNF's renders do (the reading is the
+same library, under each notation's prefix): helpers written where they
+are referenced as the construct they compile, sequences read from their
+`$step` chains and dispatchers from their `$alt` rules, factored tails
+expanded, substituted leading references written back where the
+alternatives they became still stand together, and the alternatives the
+compiler reordered put back in the order its helpers' numbers record. The
+file's header comment says how each shape is read. A spec compiled from
+another notation is written in forms W3C EBNF has, each matching exactly
+what the spec matches: a counted repetition as its copies and nested
+options, an empty alternative by making the others optional, a lone
+character no EBNF string can hold as its code point. A literal is always
+one terminal: this front end reads whitespace between terminals, so a
+literal that would take several (a case-insensitive literal holding a
+letter beside another character, a literal holding a control character
+or both quotes beside other characters) would match itself with
+whitespace inside, and is refused.
+
+The manifest's `loss` list says, a sentence each, what a written grammar
+does not keep, and what the render refuses with
+TARGET_VALUE_UNREPRESENTABLE: an action (a value annotation's builders, a
+user action, the probe dispatcher of an optional prefix), a condition or
+a counter other than a repetition's, an error generator or an alternate
+modifier (`e`, `h`), a function reference where a rule or a count is due,
+a set of tokens at one place, a removal, a clear or the form that edits a
+rule already installed (`{alts, inject}`), a token no EBNF terminal
+matches (a class whose flags change what it matches and a pattern that is
+neither one class nor an escaped literal among them), a literal no one
+EBNF terminal spells, a name EBNF cannot spell, and Go's `tokenOrder`.
+
+Measured with the `alchemy` command (alchemy-cli) over every grammar the
+repository's fixtures hold: the four of `ts/test/grammar/` and the 85
+sources of `rs/tests/oracle/ebnf-ir.json` (the four among them), 85
+distinct, 42 of which compile (the oracle holds the other 43 because the
+front end or the compiler refuses them). 39 come back as the same spec,
+byte for byte, `iso-style.ebnf` in W3C's spellings. Three come back as
+another spec, each under a loss sentence: `item ::= "hi" | ref | (alt |
+two)`, whose alternatives the compiler reordered with no helper's number
+to restore their order, and two grammars with a rule the compiler made a
+token of under a name its literal could have given it (`B ::= "b"`, and
+`B ::= #xd7ff` beside the start rule `A ::= #xD7FF`). None is refused.
+
+`npm run embed` in `ts/` (the build runs it) copies the manifest and the
+render into every runtime: `ts/src/translate.ts`, `go/translate/` and
+`rs/translate/`, served as `translate()` in TypeScript, `Translate()` in
+Go and `translate()`, `manifest_text()` and `render_text()` in Rust. The
+translation tests (`ts/test/translate.test.js`, `go/translate_test.go`,
+`rs/tests/translate_test.rs`) hold the copies to the files and the tree to
+what the compiler writes, so change the files at the root and run the
+embed. Running the render needs alchemy, which this repository does not
+depend on: `ts/test/translate-render.test.js` runs it through the
+`alchemy` command `TABNAS_ALCHEMY` names, over specs the compiler writes
+and specs changed to hold what the render must refuse, and skips without
+it; the round trip over the corpora is the hosts'.
 
 ## Authority and alignment rules
 
