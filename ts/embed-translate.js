@@ -10,6 +10,16 @@ const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
 const manifestPath = path.join(root, 'tabnas.plugin.json')
+
+// A published package is `ts/` alone: it carries this script, which its
+// build runs, and the `src/translate.ts` it generated, but not the files
+// above `ts/` it reads. Rebuilding an unpacked package keeps the
+// generated file as it was published.
+if (!fs.existsSync(manifestPath)) {
+  console.log(`embed-translate: no ${manifestPath}, so src/translate.ts is kept as published`)
+  process.exit(0)
+}
+
 const manifestText = fs.readFileSync(manifestPath, 'utf8')
 const manifest = JSON.parse(manifestText)
 const spec = manifest.translate

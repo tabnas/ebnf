@@ -148,6 +148,7 @@ quietly dropped from the tests.
 | [`ts/test/doc-examples.test.js`](ts/test/doc-examples.test.js) | Runs every ```js fence carrying a `// =>` assertion in the README and `ts/doc`. Shared harness, identical across tabnas repos. |
 | [`ts/test/version.test.js`](ts/test/version.test.js) | `VERSION` vs `package.json` "version". |
 | [`ts/test/translate.test.js`](ts/test/translate.test.js) | The translation parts: the embedded copies are the files, the manifest's `translate` object, and the grammar spec a host reads. |
+| [`ts/test/translate-render.test.js`](ts/test/translate-render.test.js) | The render run through the `alchemy` command `TABNAS_ALCHEMY` names, skipped without it: compiled specs written back, and changed ones refused. |
 | [`alchemy/render.alc`](alchemy/render.alc) | The render: a grammar spec written back as W3C EBNF (entry `ebnf-render`). See "Translation". |
 | [`ts/embed-translate.js`](ts/embed-translate.js) | Copies `tabnas.plugin.json` and the render into `ts/src/translate.ts`, `go/translate/` and `rs/translate/`, all three GENERATED; `npm run embed` runs it, and so does the build. |
 | [`ts/doc/`](ts/doc/) | Four-quadrant Diátaxis docs. |
@@ -260,8 +261,10 @@ alike, its keys in the order the compiler emits them, which is the
 grammar's rule order and its tokens' order, and the render reads both.
 Go's serializer writes the same spec with its keys in name order and the
 match tokens' order in a `tokenOrder` list, so a spec a Go host
-serializes has lost the rule order, and the render writes its rules in
-the order it is given.
+serializes has lost the rule order, which ranks the tokens (the order the
+lexer tries two tokens a place expects); the render refuses such a spec
+when its `tokenOrder` holds two tokens or more, rather than write rules
+whose tokens rank otherwise.
 
 [`alchemy/render.alc`](alchemy/render.alc) is the render, an
 [alchemy](https://github.com/tabnas/alchemy) library whose entry point
@@ -279,15 +282,25 @@ compiler reordered put back in the order its helpers' numbers record. The
 file's header comment says how each shape is read. A spec compiled from
 another notation is written in forms W3C EBNF has, each matching exactly
 what the spec matches: a counted repetition as its copies and nested
-options, an empty alternative by making the others optional, a literal no
-EBNF string can hold as the strings and code points that spell it.
+options, an empty alternative by making the others optional, a lone
+character no EBNF string can hold as its code point. A literal is always
+one terminal: this front end reads whitespace between terminals, so a
+literal that would take several (a case-insensitive literal holding a
+letter beside another character, a literal holding a control character
+or both quotes beside other characters) would match itself with
+whitespace inside, and is refused.
 
 The manifest's `loss` list says, a sentence each, what a written grammar
 does not keep, and what the render refuses with
 TARGET_VALUE_UNREPRESENTABLE: an action (a value annotation's builders, a
 user action, the probe dispatcher of an optional prefix), a condition or
-a counter other than a repetition's, a removal, a token no EBNF terminal
-matches, a name EBNF cannot spell.
+a counter other than a repetition's, an error generator or an alternate
+modifier (`e`, `h`), a function reference where a rule or a count is due,
+a set of tokens at one place, a removal, a clear or the form that edits a
+rule already installed (`{alts, inject}`), a token no EBNF terminal
+matches (a class whose flags change what it matches and a pattern that is
+neither one class nor an escaped literal among them), a literal no one
+EBNF terminal spells, a name EBNF cannot spell, and Go's `tokenOrder`.
 
 Measured with the `alchemy` command (alchemy-cli) over every grammar the
 repository's fixtures hold: the four of `ts/test/grammar/` and the 85
@@ -309,7 +322,10 @@ translation tests (`ts/test/translate.test.js`, `go/translate_test.go`,
 `rs/tests/translate_test.rs`) hold the copies to the files and the tree to
 what the compiler writes, so change the files at the root and run the
 embed. Running the render needs alchemy, which this repository does not
-depend on; the round trip that runs it is the hosts'.
+depend on: `ts/test/translate-render.test.js` runs it through the
+`alchemy` command `TABNAS_ALCHEMY` names, over specs the compiler writes
+and specs changed to hold what the render must refuse, and skips without
+it; the round trip over the corpora is the hosts'.
 
 ## Authority and alignment rules
 

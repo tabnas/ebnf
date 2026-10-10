@@ -58,9 +58,9 @@ const TRANSLATION: TranslationParts = Object.freeze({
       "Terminals are written in W3C EBNF's forms: a literal as a string in double quotes, or in single quotes where it holds a double quote, and a code point term (#xB7) as the string it matches; a class as a bracket expression whose members are printable ASCII characters or code points (#xC0); the engine's TX, NR, ST and VL by their names; and a rule the compiler made a token of (plus ::= \\"+\\", referenced as plus) as that rule, after the others.",
       "A rule the compiler made a token of, whose name is one the compiler could give its literal by itself (B ::= \\"b\\", or any name of capitals, digits and underscores where the literal holds a character past ASCII), cannot be told from that literal and is written as the literal: it compiles back with the token later in the token table, or under the name the literal gives it.",
       "Repetitions are written in W3C EBNF's postfix forms, A*, A+ and A?, stacked where a repetition is itself repeated (A+?).",
-      "A spec compiled from another notation compiles back under this package's own settings (the group tag on every alternate; GBNF's exact lexing is not kept), written in forms that match exactly what it matches and compile back as those forms: a case-insensitive literal (ABNF's default) as two-case classes and strings, a literal holding a control character or both quotes as the run of strings and code points that spells it, a counted repetition as its copies and nested options, an empty alternative, which W3C EBNF has no syntax for, by making the other alternatives optional, the class GBNF's dot compiles to as the class of every code point, and an RFC 5234 core rule as a rule of its own.",
+      "A spec compiled from another notation compiles back under this package's own settings (the group tag on every alternate; GBNF's exact lexing is not kept), written in forms that match exactly what it matches and compile back as those forms: a case-insensitive literal (ABNF's default) of one letter as the class of its two cases and one holding no letter as a string, a lone character a string cannot hold as its code point, a counted repetition as its copies and nested options, an empty alternative, which W3C EBNF has no syntax for, by making the other alternatives optional, the class GBNF's dot compiles to as the class of every code point, and an RFC 5234 core rule as a rule of its own.",
       "A rule with two alternatives that each match nothing (*SP / *10CRLF), which another notation accepts and this package's front end refuses as ambiguous, is written as it stands, and does not compile back.",
-      "A spec the render cannot write as EBNF is refused with TARGET_VALUE_UNREPRESENTABLE, naming what it met: an action (a value annotation's builders, a user action, the probe dispatcher of an optional prefix), a condition or a counter other than a repetition's, a removal or a clear, a token no EBNF terminal matches (a pattern that is not a class, the empty literal, a case-insensitive literal holding a letter past ASCII), a rule or a group whose one alternative is empty, a rule name EBNF cannot spell, a repetition bounded past what the compiler numbers, or a repetition of no copies, whose item the spec does not keep."
+      "A spec the render cannot write as EBNF is refused with TARGET_VALUE_UNREPRESENTABLE, naming what it met: an action (a value annotation's builders, a user action, the probe dispatcher of an optional prefix), a condition or a counter other than a repetition's, an error generator or an alternate modifier, a function reference where a rule or a count is due, a set of tokens at one place, a removal, a clear or the form that edits a rule already installed, a token no EBNF terminal matches (a class whose flags change what it matches, a pattern that is neither one class nor an escaped literal, the empty literal, a case-insensitive literal holding a letter past ASCII), a literal no one W3C EBNF terminal spells, since this front end reads whitespace between terminals and the run that would spell it would match the literal with whitespace inside (a case-insensitive literal holding a letter beside another character, a literal holding a control character or both quotes beside other characters), a rule or a group whose one alternative is empty, a rule name EBNF cannot spell, the empty name among them, a repetition bounded past what the compiler numbers, a repetition of no copies, whose item the spec does not keep, or a spec that gives its match tokens' order as a list of its own (Go's tokenOrder), whose rules' order, which ranks the tokens, is lost."
     ]
   }
 }
@@ -123,17 +123,34 @@ const TRANSLATION: TranslationParts = Object.freeze({
 ;   first rule.
 ;
 ; What a rule cannot be read back to is refused with
-; TARGET_VALUE_UNREPRESENTABLE, naming the rule: an action other than the
-; tree builders every compiled grammar carries (a value annotation's
+; TARGET_VALUE_UNREPRESENTABLE, naming the rule: an action other than
+; the tree builders every compiled grammar carries (a value annotation's
 ; builders, a user action, the probe dispatcher's), a condition or a
-; counter other than a repeat loop's, a removal, a token no EBNF terminal
-; matches, and a name this dialect cannot spell.
+; counter other than a repeat loop's, an error generator or an alternate
+; modifier (\`e\`, \`h\`), a function reference where a rule or a count is
+; due, a set of tokens at one place, the form that edits a rule already
+; installed (\`{alts, inject}\`), a removal, and a token no EBNF terminal
+; matches (a negated class, a class holding a character past ASCII
+; alone, a class whose flags change what it matches, a pattern that is
+; neither one class nor an escaped literal). A spec serialized by Go,
+; which writes its rules in name order and its match tokens' order as a
+; list of its own (\`options.match.tokenOrder\`), is refused when that
+; list holds two tokens or more: the rules' order, which ranks the
+; tokens (the order the lexer tries two tokens a place expects), is
+; lost.
+;
+; A literal no one EBNF terminal spells is refused too, since this front
+; end reads whitespace between terminals and the run that would spell it
+; would match the literal with whitespace inside: a case-insensitive
+; literal (ABNF's default) holding a letter beside another character, a
+; literal holding a control character or both quotes beside other
+; characters. A name this dialect cannot spell is refused.
 ;
 ; A spec compiled from another notation is written as far as W3C EBNF can
 ; say it, each in a form that matches exactly what the spec matches and
-; compiles back to that form: a case-insensitive literal (ABNF's default)
-; as two-case classes and strings, a literal holding a control character
-; or both quotes as the run of strings and code points that spells it, a
+; compiles back to that form: a case-insensitive literal of one letter
+; (ABNF's default) as the class of its two cases and one holding no letter
+; as a string, a lone character no string holds as its code point, a
 ; counted repetition as its copies and nested options, an empty
 ; alternative by making the others optional, \`[\\s\\S]\` (GBNF's \`.\`) as the
 ; class of every code point, and an RFC 5234 core rule as a rule of its
@@ -304,16 +321,22 @@ def ebnf-has [cx name]
     case :record true
     case _ false
 
+; A rule's alternates in one phase, the falsy placeholders the engine
+; skips left out.
 def ebnf-open [r]
-  ebnf-vec (get "open" r)
+  filter (fn [alt] (match (kind alt) (case :record true) (case _ false))) (ebnf-vec (get "open" r))
 
 def ebnf-close [r]
-  ebnf-vec (get "close" r)
+  filter (fn [alt] (match (kind alt) (case :record true) (case _ false))) (ebnf-vec (get "close" r))
 
+; The tokens an alternate matches: its \`s\`, a string of token names
+; between spaces or a list of them.
 def ebnf-s [alt]
-  match (ebnf-str (get "s" alt))
-    case "" []
-    case s (split " " s)
+  let [s (get "s" alt)]
+    match (kind s)
+      case :string (filter ebnf-full (split " " s))
+      case :vector (map ebnf-str (as-vector s))
+      case _ []
 
 def ebnf-b [alt]
   match (kind (get "b" alt))
@@ -330,6 +353,7 @@ def ebnf-a [alt]
   match (kind (get "a" alt))
     case :string (get "a" alt)
     case :missing ""
+    case :null ""
     case _ "?"
 
 ; Whether the compiler made the rule: provenance names every rule it
@@ -346,39 +370,118 @@ def ebnf-made [cx name]
         case true true
         case false (ebnf-some (ebnf-rest (split "$" name)))
 
-; The kind the tree builders give a rule the author wrote: "user", or
-; "core" for an RFC 5234 core rule the compiler added.
-def ebnf-kind [r]
-  let [o (ebnf-open r)]
-    match (count o)
-      case 0 "user"
-      case _
-        match (ebnf-str (get-path (as-path ["k" "node$" "kind"]) (ebnf-at o 0)))
-          case "core" "core"
-          case _ "user"
-
 ; ---- what the spec may hold
 
 ; Every alternate is one the compiler's tree-building grammars are made
-; of: the tree builders, a repeat loop's guard and counter, and nothing
-; else. Anything more is a construct the notation does not write.
-def ebnf-check-alt [name alt]
+; of: the tokens it matches and gives back (\`s\`, \`b\`), the rule it pushes
+; or replaces itself with (\`p\`, \`r\`), the tree builders (\`a\`, \`k\`), group
+; tags, marks and per-rule scratch (\`g\`, \`m\`, \`u\`), and, in a repeat loop
+; alone, the loop's guard and counter (\`c\`, \`n\`). Anything more is a
+; construct the notation does not write: an error generator (\`e\`), an
+; alternate modifier (\`h\`), a function in place of a rule or a count, an
+; action other than the tree builders, another condition or counter.
+def ebnf-alt-keys ["s" "b" "p" "r" "a" "c" "n" "k" "g" "m" "u"]
+
+def ebnf-key-text [key]
+  match key
+    case "e" "e (an error generator)"
+    case "h" "h (an alternate modifier)"
+    case _ key
+
+def ebnf-check-alt [cx name alt]
+  let [extra (filter (fn [key] (match (ebnf-among key ebnf-alt-keys) (case true false) (case false (ebnf-given (get key alt))))) (keys alt))]
+    match (count extra)
+      case 0 (ebnf-check-parts cx name alt)
+      case _ (ebnf-fail (string-join "" ["rule " name " has an alternate carrying " (string-join ", " (map ebnf-key-text extra)) ", which is not written"]))
+
+def ebnf-check-parts [cx name alt]
   let [a (ebnf-a alt)]
-    let [c (get "c" alt)]
-      let [n (get "n" alt)]
-        match (ebnf-among a ["" "@node$" "@capture$" "@bubble$" "@fold$"])
-          case false
-            match (ebnf-starts "@probe" (ebnf-action-text alt))
-              case true (ebnf-fail (string-join "" ["rule " name " is the probe dispatcher the compiler makes for an optional prefix ([ X D ] Y), which is not read back"]))
-              case false (ebnf-fail (string-join "" ["rule " name " carries an action (" (ebnf-action-text alt) "), which is not written"]))
-          case true
-            match (kind c)
-              case :missing (ebnf-check-counter name n)
-              case :record
-                match (keys c)
-                  case ["n.rep"] (ebnf-check-counter name n)
-                  case _ (ebnf-fail (string-join "" ["rule " name " carries a condition on " (string-join ", " (keys c)) ", which is not written"]))
-              case _ (ebnf-fail (string-join "" ["rule " name " carries a condition, which is not written"]))
+    match (ebnf-among a ["" "@node$" "@capture$" "@bubble$" "@fold$"])
+      case false
+        match (ebnf-starts "@probe" (ebnf-action-text alt))
+          case true (ebnf-fail (string-join "" ["rule " name " is the probe dispatcher the compiler makes for an optional prefix ([ X D ] Y), which is not read back"]))
+          case false (ebnf-fail (string-join "" ["rule " name " carries an action (" (ebnf-action-text alt) "), which is not written"]))
+      case true
+        let [tokens (ebnf-check-s name (get "s" alt))]
+          let [next (count (map (fn [key] (ebnf-check-next name key (get key alt))) ["p" "r"]))]
+            let [back (ebnf-check-back name (get "b" alt))]
+              ebnf-check-loop cx name alt
+
+; The tokens: a string of names between spaces, or a list of names, one
+; place each; a place holding a set of tokens (names between spaces, or a
+; list) chooses among them, which the render does not read back.
+def ebnf-check-s [name s]
+  match (kind s)
+    case :missing true
+    case :null true
+    case :string true
+    case :vector
+      match (ebnf-none (filter (fn [t] (match (kind t) (case :string (ebnf-some (ebnf-rest (split " " t)))) (case _ true))) (as-vector s)))
+        case true true
+        case false (ebnf-fail (string-join "" ["rule " name " has an alternate whose s holds, at one place, a set of tokens or something other than a token's name, which is not written"]))
+    case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose s is not tokens, which is not written"]))
+
+; The rule an alternate pushes or replaces itself with: a name, or none;
+; a function reference (\`@name\`) chooses at run time and is not written.
+def ebnf-check-next [name key v]
+  match (kind v)
+    case :missing true
+    case :null true
+    case :boolean (match v (case false true) (case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose " key " is not a rule, which is not written"]))))
+    case :string
+      match (ebnf-starts "@" v)
+        case true (ebnf-fail (string-join "" ["rule " name " has an alternate whose " key " is the function reference " v ", which is not written"]))
+        case false true
+    case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose " key " is not a rule, which is not written"]))
+
+def ebnf-check-back [name v]
+  match (kind v)
+    case :missing true
+    case :null true
+    case :number true
+    case :boolean (match v (case false true) (case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose b is not a count, which is not written"]))))
+    case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose b is not a count (" (ebnf-str v) "), which is not written"]))
+
+; A repeat loop's guard (\`c: {n.rep: 0}\`) and counter (\`n: {rep: 0}\` or
+; \`{rep: 1}\`), in the loop the compiler makes for a repetition and the
+; steps of its item, and nowhere else.
+def ebnf-loop-rule [cx name]
+  ebnf-same (ebnf-helper-kind cx (ebnf-at (split "$" name) 0)) "star"
+
+def ebnf-check-loop [cx name alt]
+  let [c (get "c" alt)]
+    let [n (get "n" alt)]
+      match (match (ebnf-given c) (case true true) (case false (ebnf-given n)))
+        case false true
+        case true
+          match (ebnf-loop-rule cx name)
+            case false (ebnf-fail (string-join "" ["rule " name " carries a condition or a counter outside a repetition's loop, which is not written"]))
+            case true
+              match (match (ebnf-given c) (case false true) (case true (match (kind c) (case :record (ebnf-loop-value c "n.rep" [0])) (case _ false))))
+                case false (ebnf-fail (string-join "" ["rule " name " carries a condition other than its loop's, which is not written"]))
+                case true
+                  match (match (ebnf-given n) (case false true) (case true (match (kind n) (case :record (ebnf-loop-value n "rep" [0 1])) (case _ false))))
+                    case false (ebnf-fail (string-join "" ["rule " name " carries a counter other than its loop's, which is not written"]))
+                    case true true
+
+; Whether an alternate gives a field: the engine reads a field that is
+; missing, null or false as one it does not give.
+def ebnf-given [v]
+  match (kind v)
+    case :missing false
+    case :null false
+    case :boolean (match v (case false false) (case _ true))
+    case _ true
+
+def ebnf-loop-value [rec key allowed]
+  match (keys rec)
+    case [only]
+      match (ebnf-same only key)
+        case false false
+        case true
+          let [v (get-path (as-path [key]) rec)]
+            ebnf-some (filter (fn [x] (match (compare v x) (case :equal true) (case _ false))) allowed)
+    case _ false
 
 def ebnf-action-text [alt]
   match (kind (get "a" alt))
@@ -386,26 +489,44 @@ def ebnf-action-text [alt]
     case :vector (string-join " " (map ebnf-str (as-vector (get "a" alt))))
     case _ "a function"
 
-def ebnf-check-counter [name n]
-  match (kind n)
+; A rule's phases: a list of alternates each, or none; the form that edits
+; a rule already installed (\`{alts, inject}\`) is not written.
+def ebnf-check-phase [name phase v]
+  match (kind v)
     case :missing true
-    case :record
-      match (keys n)
-        case ["rep"] true
-        case _ (ebnf-fail (string-join "" ["rule " name " carries a counter " (string-join ", " (keys n)) ", which is not written"]))
-    case _ (ebnf-fail (string-join "" ["rule " name " carries a counter, which is not written"]))
+    case :null true
+    case :vector true
+    case :record (ebnf-fail (string-join "" ["rule " name " gives its " phase " alternates as alts and an inject, which edits a rule already installed and is not written"]))
+    case _ (ebnf-fail (string-join "" ["rule " name " gives its " phase " alternates in a form that is not a list, which is not written"]))
 
 def ebnf-check-rule [cx name]
   let [r (ebnf-rule cx name)]
     match (kind r)
       case :record
-        count (map (fn [alt] (ebnf-check-alt name alt)) (ebnf-cat (ebnf-open r) (ebnf-close r)))
-      case _ (ebnf-fail (string-join "" ["rule " name " is removed, which is not written"]))
+        let [phases (count (map (fn [phase] (ebnf-check-phase name phase (get phase r))) ["open" "close"]))]
+          count (map (fn [alt] (ebnf-check-alt cx name alt)) (ebnf-cat (ebnf-open r) (ebnf-close r)))
+      case :null (ebnf-fail (string-join "" ["rule " name " is removed, which is not written"]))
+      case _ (ebnf-fail (string-join "" ["rule " name " is not a rule's alternates, which is not written"]))
+
+; A spec serialized by Go writes its keys in name order and its match
+; tokens' order in a list of its own (\`options.match.tokenOrder\`): the
+; rules' order, which decides the order the compiler gives the tokens
+; again, is lost, and with it which of two tokens that both match wins.
+def ebnf-check-order [spec]
+  let [order (get-path (as-path ["options" "match" "tokenOrder"]) spec)]
+    match (kind order)
+      case :vector
+        match (ebnf-less (count (as-vector order)) 2)
+          case true true
+          case false (ebnf-fail "it gives its match tokens' order as a list of its own (tokenOrder, Go's serialization, whose keys are in name order), and the order of the rules, which their precedence follows, is lost")
+      case _ true
 
 def ebnf-check [spec cx]
-  match (kind (get "clear" spec))
-    case :boolean (ebnf-fail "it clears the grammar it is installed on, which is not written")
-    case _ (count (map (fn [name] (ebnf-check-rule cx name)) (keys (get :rules cx))))
+  match (get "clear" spec)
+    case true (ebnf-fail "it clears the grammar it is installed on, which is not written")
+    case _
+      let [order (ebnf-check-order spec)]
+        count (map (fn [name] (ebnf-check-rule cx name)) (keys (get :rules cx)))
 
 ; ---- tokens
 
@@ -440,11 +561,84 @@ def ebnf-match-token [t m]
           case true
             let [body (ebnf-after "^" src)]
               match (ebnf-starts "[" body)
-                case true (ebnf-class body flags)
+                case true
+                  match (ebnf-class-pattern body)
+                    case false (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which is not one class the render reads, and no EBNF terminal matches it"]))
+                    case true
+                      match (ebnf-among flags ["" "u"])
+                        case true (ebnf-class body flags)
+                        case false (ebnf-fail (string-join "" ["the token " t " is the class " m ", whose flags (" flags ") change what it matches, and no EBNF terminal matches it"]))
                 case false
                   match flags
-                    case "i" (ebnf-lit (ebnf-unescape body) false)
+                    case "i"
+                      match (ebnf-escaped-literal body)
+                        case true (ebnf-lit (ebnf-unescape body) false)
+                        case false (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which is not a literal the render reads, and no EBNF terminal matches it"]))
                     case _ (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which no EBNF terminal matches"]))
+
+; Whether a pattern's body is one class as the compiler writes one:
+; \`[\`, an optional \`^\`, members each a \`\\uXXXX\` or \`\\u{X...}\` escape, alone
+; or the low end of a range, and \`]\` ending it; or \`[\\s\\S]\`, which
+; another notation's \`.\` compiles to.
+def ebnf-class-pattern [body]
+  match body
+    case "[\\\\s\\\\S]" true
+    case _
+      match (ebnf-ends "]" body)
+        case false false
+        case true
+          let [inner (ebnf-before "]" (ebnf-after "[" body))]
+            match (ebnf-some (filter (fn [c] (ebnf-some (ebnf-rest (split c inner)))) ["[" "]"]))
+              case true false
+              case false
+                let [pieces (split "\\\\u" (match (ebnf-starts "^" inner) (case true (ebnf-after "^" inner)) (case false inner)))]
+                  match (ebnf-empty (ebnf-at pieces 0))
+                    case false false
+                    case true
+                      let [members (ebnf-rest pieces)]
+                        match (count members)
+                          case 0 false
+                          case _
+                            match (ebnf-ends "-" (top members))
+                              case true false
+                              case false (ebnf-none (filter (fn [m] (ebnf-not (ebnf-member-piece m))) members))
+
+def ebnf-member-piece [piece]
+  let [core (match (ebnf-ends "-" piece) (case true (ebnf-before "-" piece)) (case false piece))]
+    match (ebnf-starts "{" core)
+      case true
+        match (ebnf-ends "}" core)
+          case false false
+          case true
+            let [h (ebnf-before "}" (ebnf-after "{" core))]
+              match (ebnf-among (ebnf-num (length h)) ["1" "2" "3" "4" "5" "6"])
+                case false false
+                case true (ebnf-hex-only h)
+      case false
+        match (length core)
+          case 4 (ebnf-hex-only core)
+          case _ false
+
+def ebnf-hex-only [h]
+  match h
+    case "" false
+    case _ (chars-within [[48 57] [65 70] [97 102]] h)
+
+; Whether a pattern's body is a literal as the compiler escapes one: every
+; character a pattern reads otherwise (\`\\ ^ $ . * + ? ( ) [ ] { } |\`)
+; after a backslash, and a backslash before nothing else.
+def ebnf-meta-chars ["^" "$" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|"]
+
+def ebnf-escaped-literal [body]
+  let [rest (ebnf-strip-escapes ebnf-strip-escapes ebnf-meta-chars (string-join "" (split "\\\\\\\\" body)))]
+    match (ebnf-some (ebnf-rest (split "\\\\" rest)))
+      case true false
+      case false (ebnf-none (filter (fn [c] (ebnf-some (ebnf-rest (split c rest)))) ebnf-meta-chars))
+
+def ebnf-strip-escapes [self cs s]
+  match (count cs)
+    case 0 s
+    case _ (self self (pop cs) (string-join "" (split (string-join "" ["\\\\" (top cs)]) s)))
 
 ; A token set's class, read back from its name, which the compiler gives
 ; the class it lays over the atoms (\`rx_\` and the pattern, each character
@@ -664,18 +858,6 @@ def ebnf-dispatch-alts [cx name r]
 def ebnf-dispatches [cx name r]
   ebnf-some (filter (fn [alt] (ebnf-starts (string-join "" [name "$alt"]) (ebnf-target alt))) (ebnf-open r))
 
-; A repeat loop: its first open alternate is the entry, guarded by the
-; loop's counter, replacing the rule with itself.
-def ebnf-is-loop [name r]
-  let [o (ebnf-open r)]
-    match (count o)
-      case 0 false
-      case _
-        let [e (ebnf-at o 0)]
-          match (kind (get-path (as-path ["c" "n.rep"]) e))
-            case :number (ebnf-same (ebnf-r e) name)
-            case _ false
-
 ; A loop's item: what its continue alternate takes, a token it consumes,
 ; or the rule its iteration (\`<loop>$alt0\`) pushes.
 def ebnf-loop-item [cx name r]
@@ -753,12 +935,6 @@ def ebnf-before-digits [p]
   match (ebnf-starts "fact" p)
     case true (match (ebnf-digits (ebnf-after "fact" p)) (case true "fact") (case false p))
     case false p
-
-def ebnf-same-el [a b]
-  match (get :k a)
-    case :tok (match (get :k b) (case :tok (ebnf-same (get :name a) (get :name b))) (case _ false))
-    case :ref (match (get :k b) (case :ref (ebnf-same (get :name a) (get :name b))) (case _ false))
-    case _ false
 
 ; An alternative with its factored tails expanded back: one whose last
 ; element is a left-factored tail (\`<rule>$fact<k>\`) is the prefix before
@@ -870,14 +1046,6 @@ def ebnf-rep-parts [cx name]
               entry :min (count seq)
               entry :max (ebnf-num (count seq))
 
-; Whether an option is over a group.
-def ebnf-opt-group [cx name]
-  let [alts (ebnf-raw-alts cx name)]
-    let [inner (ebnf-at (ebnf-filled alts) 0)]
-      match (get :k inner)
-        case :ref (ebnf-same (ebnf-helper-kind cx (get :name inner)) "group")
-        case _ false
-
 ; An element's structure as one string, a helper by what it compiles (a
 ; counted repetition by its item and counts, not by the nested options
 ; it compiles to, which are as deep as its count).
@@ -911,9 +1079,10 @@ def ebnf-seq-keys [cx seq]
 ; The ASCII characters, each with its two hexadecimal digits.
 def ebnf-ascii [["\\u0000" "00"] ["\\u0001" "01"] ["\\u0002" "02"] ["\\u0003" "03"] ["\\u0004" "04"] ["\\u0005" "05"] ["\\u0006" "06"] ["\\u0007" "07"] ["\\b" "08"] ["\\t" "09"] ["\\n" "0A"] ["\\u000b" "0B"] ["\\f" "0C"] ["\\r" "0D"] ["\\u000e" "0E"] ["\\u000f" "0F"] ["\\u0010" "10"] ["\\u0011" "11"] ["\\u0012" "12"] ["\\u0013" "13"] ["\\u0014" "14"] ["\\u0015" "15"] ["\\u0016" "16"] ["\\u0017" "17"] ["\\u0018" "18"] ["\\u0019" "19"] ["\\u001a" "1A"] ["\\u001b" "1B"] ["\\u001c" "1C"] ["\\u001d" "1D"] ["\\u001e" "1E"] ["\\u001f" "1F"] [" " "20"] ["!" "21"] ["\\"" "22"] ["#" "23"] ["$" "24"] ["%" "25"] ["&" "26"] ["'" "27"] ["(" "28"] [")" "29"] ["*" "2A"] ["+" "2B"] ["," "2C"] ["-" "2D"] ["." "2E"] ["/" "2F"] ["0" "30"] ["1" "31"] ["2" "32"] ["3" "33"] ["4" "34"] ["5" "35"] ["6" "36"] ["7" "37"] ["8" "38"] ["9" "39"] [":" "3A"] [";" "3B"] ["<" "3C"] ["=" "3D"] [">" "3E"] ["?" "3F"] ["@" "40"] ["A" "41"] ["B" "42"] ["C" "43"] ["D" "44"] ["E" "45"] ["F" "46"] ["G" "47"] ["H" "48"] ["I" "49"] ["J" "4A"] ["K" "4B"] ["L" "4C"] ["M" "4D"] ["N" "4E"] ["O" "4F"] ["P" "50"] ["Q" "51"] ["R" "52"] ["S" "53"] ["T" "54"] ["U" "55"] ["V" "56"] ["W" "57"] ["X" "58"] ["Y" "59"] ["Z" "5A"] ["[" "5B"] ["\\\\" "5C"] ["]" "5D"] ["^" "5E"] ["_" "5F"] ["\`" "60"] ["a" "61"] ["b" "62"] ["c" "63"] ["d" "64"] ["e" "65"] ["f" "66"] ["g" "67"] ["h" "68"] ["i" "69"] ["j" "6A"] ["k" "6B"] ["l" "6C"] ["m" "6D"] ["n" "6E"] ["o" "6F"] ["p" "70"] ["q" "71"] ["r" "72"] ["s" "73"] ["t" "74"] ["u" "75"] ["v" "76"] ["w" "77"] ["x" "78"] ["y" "79"] ["z" "7A"] ["{" "7B"] ["|" "7C"] ["}" "7D"] ["~" "7E"] ["\\u007f" "7F"]]
 
-; A string of ASCII characters as their code points, in order: the string
-; is cut at each character it holds, in turn, and the character put back
-; as its code point between the pieces.
+; A piece of a literal's text: a run of its characters (\`:raw\`), or one
+; character as its code point (\`:cp\`). A run is cut at each place it
+; holds a character, which is put back as its code point between the
+; pieces, and the empty runs are left out.
 def ebnf-raw-seg [s]
   record
     entry :raw s
@@ -929,63 +1098,16 @@ def ebnf-cut-seg [c h seg]
         ebnf-flat (map (fn [i] (match i (case 0 [(ebnf-raw-seg (ebnf-at pieces 0))]) (case _ [(ebnf-cp-seg h) (ebnf-raw-seg (ebnf-at pieces i))]))) (indices pieces))
     case _ [seg]
 
-def ebnf-code-walk [self chars segs]
-  match (count chars)
-    case 0 segs
-    case _
-      let [ch (top chars)]
-        self self (pop chars) (filter ebnf-kept-seg (ebnf-flat (map (fn [seg] (ebnf-cut-seg (ebnf-at ch 0) (ebnf-at ch 1) seg)) segs)))
-
 def ebnf-kept-seg [seg]
   match (get :raw seg)
     case "" false
     case _ true
 
-def ebnf-codes [text]
-  let [present (filter (fn [ch] (ebnf-some (ebnf-rest (split (ebnf-at ch 0) text)))) ebnf-ascii)]
-    let [segs (ebnf-code-walk ebnf-code-walk present [(ebnf-raw-seg text)])]
-      map (fn [seg] (ebnf-wide-code text seg)) segs
-
-; A character past ASCII and inside the Basic Multilingual Plane, as its
-; code point: its block of 256 is the last whose start it is not below,
-; and its place in the block the one \`\\uXXXX\` escape there that spells it.
+; The sixteen hexadecimal digits, and the 256 pairs of them.
 def ebnf-hex-digits ["0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "A" "B" "C" "D" "E" "F"]
 
 def ebnf-hex-pairs
   ebnf-flat (map (fn [a] (map (fn [b] (string-join "" [a b])) ebnf-hex-digits)) ebnf-hex-digits)
-
-def ebnf-blocks [0 256 512 768 1024 1280 1536 1792 2048 2304 2560 2816 3072 3328 3584 3840 4096 4352 4608 4864 5120 5376 5632 5888 6144 6400 6656 6912 7168 7424 7680 7936 8192 8448 8704 8960 9216 9472 9728 9984 10240 10496 10752 11008 11264 11520 11776 12032 12288 12544 12800 13056 13312 13568 13824 14080 14336 14592 14848 15104 15360 15616 15872 16128 16384 16640 16896 17152 17408 17664 17920 18176 18432 18688 18944 19200 19456 19712 19968 20224 20480 20736 20992 21248 21504 21760 22016 22272 22528 22784 23040 23296 23552 23808 24064 24320 24576 24832 25088 25344 25600 25856 26112 26368 26624 26880 27136 27392 27648 27904 28160 28416 28672 28928 29184 29440 29696 29952 30208 30464 30720 30976 31232 31488 31744 32000 32256 32512 32768 33024 33280 33536 33792 34048 34304 34560 34816 35072 35328 35584 35840 36096 36352 36608 36864 37120 37376 37632 37888 38144 38400 38656 38912 39168 39424 39680 39936 40192 40448 40704 40960 41216 41472 41728 41984 42240 42496 42752 43008 43264 43520 43776 44032 44288 44544 44800 45056 45312 45568 45824 46080 46336 46592 46848 47104 47360 47616 47872 48128 48384 48640 48896 49152 49408 49664 49920 50176 50432 50688 50944 51200 51456 51712 51968 52224 52480 52736 52992 53248 53504 53760 54016 54272 54528 54784 55040 55296 55552 55808 56064 56320 56576 56832 57088 57344 57600 57856 58112 58368 58624 58880 59136 59392 59648 59904 60160 60416 60672 60928 61184 61440 61696 61952 62208 62464 62720 62976 63232 63488 63744 64000 64256 64512 64768 65024 65280]
-
-def ebnf-bmp-code [c]
-  let [h (top (filter (fn [i] (chars-within [[(ebnf-at ebnf-blocks i) 65535]] c)) (indices ebnf-blocks)))]
-    let [hh (ebnf-at ebnf-hex-pairs h)]
-      let [found (filter (fn [l] (ebnf-same (unquoted (string-join "" ["\\"\\\\u" hh l "\\""])) c)) ebnf-hex-pairs)]
-        match (count found)
-          case 0 ""
-          case _
-            match hh
-              case "00" (ebnf-at found 0)
-              case _ (string-join "" [hh (ebnf-at found 0)])
-
-; A piece of a literal that is no ASCII character: one character of the
-; Basic Multilingual Plane, as its code point, and nothing else.
-def ebnf-wide-code [text seg]
-  match (kind (get :raw seg))
-    case :string
-      let [raw (get :raw seg)]
-        match (length raw)
-          case 1
-            match (chars-within [[128 55295] [57344 65535]] raw)
-              case true
-                match (ebnf-bmp-code raw)
-                  case "" (ebnf-fail (string-join "" ["the literal " (quoted text) " holds a character the render cannot spell"]))
-                  case code code
-              case false (ebnf-fail (string-join "" ["the literal " (quoted text) " holds a character past U+FFFF, which the render does not spell as a numeric value"]))
-          case _ (ebnf-fail (string-join "" ["the literal " (quoted text) " holds two characters past U+007F in a row, which the render does not spell as numeric values"]))
-    case _ (get :cp seg)
-
-def ebnf-has-letter [text]
-  ebnf-not (chars-within [[0 64] [91 96] [123 1114111]] text)
 
 ; ---- token names
 
@@ -1043,7 +1165,7 @@ def ebnf-used [cx]
           map
             fn [name]
               let [r (get-path (as-path [name]) rules)]
-                string-join " " (map (fn [alt] (ebnf-str (get "s" alt))) (ebnf-cat (ebnf-open r) (ebnf-close r)))
+                string-join " " (ebnf-flat (map ebnf-s (ebnf-cat (ebnf-open r) (ebnf-close r))))
             keys rules
         " "
 
@@ -1187,10 +1309,10 @@ def ebnf-quote [text]
     case false (string-join "" ["\\"" text "\\""])
     case true (string-join "" ["'" text "'"])
 
-; A literal's items: one string, or, where the literal holds a control
-; character or both quotes, which a W3C EBNF string cannot hold, the run of
-; strings and code points (\`#xA\`) that spells it, each such character a
-; code point of its own.
+; A literal's terminals: one string, or, where the literal holds a control
+; character or both quotes, which a W3C EBNF string cannot hold, the
+; strings and code points (\`#xA\`) that spell it, each such character a code
+; point of its own.
 def ebnf-string-items [text]
   let [both (match (ebnf-some (ebnf-rest (split "\\"" text))) (case true (ebnf-some (ebnf-rest (split "'" text)))) (case false false))]
     match (match (chars-within [[32 126] [160 1114111]] text) (case true (ebnf-not both)) (case false false))
@@ -1211,10 +1333,10 @@ def ebnf-code-cut [self codes segs]
       let [code (top codes)]
         self self (pop codes) (filter ebnf-kept-seg (ebnf-flat (map (fn [seg] (ebnf-cut-seg (ebnf-code-char code) (string-join "" ["#x" (ebnf-code-digits (ebnf-code-hex code))]) seg)) segs)))
 
-; A case-insensitive literal (ABNF's default) as W3C EBNF, whose strings
-; match exactly: each ASCII letter a class of its two cases, each run of
-; other characters a string, which matches exactly what the literal
-; matches. A letter past ASCII has no one right expansion, and is refused.
+; A case-insensitive literal's terminals (ABNF's default), since W3C EBNF's
+; strings match exactly: each ASCII letter a class of its two cases, each
+; run of other characters a string. A letter past ASCII has no one right
+; expansion, and is refused.
 def ebnf-fold-cut [self pairs segs]
   match (count pairs)
     case 0 segs
@@ -1238,16 +1360,22 @@ def ebnf-folded [text]
               case _ [(get :cp seg)]
           ebnf-fold-cut ebnf-fold-cut ebnf-upper-pairs [(ebnf-raw-seg text)]
 
-; A literal's EBNF items: a string where the match is exact (or the run
-; that spells it), a sequence where it folds case. The empty literal has
-; no W3C EBNF spelling.
+; A literal as the one W3C EBNF terminal that matches what it matches: a
+; string, a character no string holds as its code point, a case-insensitive
+; letter as the class of its two cases. This front end reads whitespace
+; between terminals, so a literal that would take more than one (a
+; case-insensitive letter beside another character, a control character
+; or both quotes beside other characters) would match more than the
+; literal does, with whitespace inside it, and is refused. The empty
+; literal has no W3C EBNF spelling.
 def ebnf-lit-items [text cs]
   match text
     case "" (ebnf-fail "the empty literal, which W3C EBNF has no syntax for")
     case _
-      match cs
-        case true (ebnf-string-items text)
-        case false (ebnf-folded text)
+      let [items (match cs (case true (ebnf-string-items text)) (case false (ebnf-folded text)))]
+        match (count items)
+          case 1 items
+          case _ (ebnf-fail (string-join "" ["the " (match cs (case true "") (case false "case-insensitive ")) "literal " (quoted text) " is no one W3C EBNF terminal: it would be written as " (string-join " " items) ", and this front end reads whitespace between terminals"]))
 
 ; A class's member, \`\\uXXXX\` or \`\\u{X...}\`, as W3C EBNF writes it: a
 ; printable ASCII character as itself, unless it means something inside
@@ -1305,7 +1433,7 @@ def ebnf-legal-name [name]
 def ebnf-ref-text [name]
   match (ebnf-legal-name name)
     case true name
-    case false (ebnf-fail (string-join "" ["the rule " name " has a name EBNF cannot spell"]))
+    case false (ebnf-fail (string-join "" ["the rule " (quoted name) " has a name EBNF cannot spell"]))
 
 ; Whether a token is a rule the compiler lifted: a literal's token whose
 ; name is not the one the literal gives it, or that nothing references,

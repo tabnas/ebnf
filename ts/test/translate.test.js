@@ -7,7 +7,9 @@
 
 const Assert = require('node:assert/strict')
 const Fs = require('node:fs')
+const Os = require('node:os')
 const Path = require('node:path')
+const { spawnSync } = require('node:child_process')
 const { test } = require('node:test')
 
 const { compileSpec } = require('@tabnas/bnf')
@@ -88,4 +90,31 @@ test('a host reads a document as the strict pure-data grammar spec', () => {
   Assert.deepEqual(Object.keys(tree.rule), ['Doc', 'Greet', '__start__'])
   Assert.equal(tree.options.rule.start, '__start__')
   Assert.equal(tree.meta.provenance.__start__, 'Doc')
+})
+
+// A published package is `ts/` alone, unpacked as `package/`: its build
+// runs the embed script, so the package carries it, and the script keeps
+// the generated `src/translate.ts` where the files it reads, above `ts/`,
+// are not there.
+test('a published package rebuilds without the files the embed reads', () => {
+  const pkg = JSON.parse(Fs.readFileSync(Path.join(ROOT, 'ts', 'package.json'), 'utf8'))
+  Assert.match(pkg.scripts.build, /embed-translate\.js/)
+  Assert.ok(pkg.files.includes('embed-translate.js'),
+    'the build runs embed-translate.js, which ts/package.json does not publish')
+  const dir = Fs.mkdtempSync(Path.join(Os.tmpdir(), 'ebnf-package-'))
+  try {
+    const unpacked = Path.join(dir, 'package')
+    Fs.mkdirSync(Path.join(unpacked, 'src'), { recursive: true })
+    Fs.copyFileSync(Path.join(ROOT, 'ts', 'embed-translate.js'),
+      Path.join(unpacked, 'embed-translate.js'))
+    const published = Fs.readFileSync(Path.join(ROOT, 'ts', 'src', 'translate.ts'), 'utf8')
+    Fs.writeFileSync(Path.join(unpacked, 'src', 'translate.ts'), published)
+    const run = spawnSync(process.execPath, ['embed-translate.js'],
+      { cwd: unpacked, encoding: 'utf8' })
+    Assert.equal(run.status, 0, run.stderr)
+    Assert.equal(Fs.readFileSync(Path.join(unpacked, 'src', 'translate.ts'), 'utf8'), published)
+    Assert.deepEqual(Fs.readdirSync(dir), ['package'])
+  } finally {
+    Fs.rmSync(dir, { recursive: true, force: true })
+  }
 })
