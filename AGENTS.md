@@ -256,7 +256,13 @@ over `ebnf_convert` with `builtins` on in Rust; `bnf.ToJsonic` over
 `bnf.ToPureSpec` over `Ebnf` with `Builtins` on in Go), parsed as JSON:
 the compiled rules with their tree builders as `$`-builtins, the options,
 and `meta.provenance`, which names the rule each synthesized rule came
-from. The TypeScript and Rust compilers write that text byte for byte
+from.
+A spec without it is read by the names the compiler gives the rules it
+makes (`_gen<n>_<kind>...`, the start wrapper, and the `$alt<i>`,
+`$step<j>`, `$fact<k>` and probe parts it splits off a rule), a helper
+only where it also has the shape its kind has; any other rule, such as
+one the author named `_general`, is the author's.
+The TypeScript and Rust compilers write that text byte for byte
 alike, its keys in the order the compiler emits them, which is the
 grammar's rule order and its tokens' order, and the render reads both.
 Go's serializer writes the same spec with its keys in name order and the
@@ -300,7 +306,16 @@ a set of tokens at one place, a removal, a clear or the form that edits a
 rule already installed (`{alts, inject}`), a token no EBNF terminal
 matches (a class whose flags change what it matches and a pattern that is
 neither one class nor an escaped literal among them), a literal no one
-EBNF terminal spells, a name EBNF cannot spell, and Go's `tokenOrder`.
+EBNF terminal spells, a token set whose tokens are not the class its name
+gives, a rule with no alternate to open with, a sequence's step with more
+alternates than a step, a rule the compiler lifted to a token whose name
+another rule holds,
+a start that is not the start wrapper every grammar text compiles
+to, a name EBNF cannot spell, and Go's `tokenOrder`. The
+tree builders every compiled grammar carries, and its marks, are not
+written, as the plan's declared subset says (an action or a mark is not
+written): the compiler makes them again from the rules, and a loss
+sentence says so.
 
 Measured with the `alchemy` command (alchemy-cli) over every grammar the
 repository's fixtures hold: the four of `ts/test/grammar/` and the 85
