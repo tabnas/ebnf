@@ -256,7 +256,13 @@ over `ebnf_convert` with `builtins` on in Rust; `bnf.ToJsonic` over
 `bnf.ToPureSpec` over `Ebnf` with `Builtins` on in Go), parsed as JSON:
 the compiled rules with their tree builders as `$`-builtins, the options,
 and `meta.provenance`, which names the rule each synthesized rule came
-from. The TypeScript and Rust compilers write that text byte for byte
+from.
+A spec without it is read by the names the compiler gives the rules it
+makes (`_gen<n>_<kind>...`, the start wrapper, and the `$alt<i>`,
+`$step<j>`, `$fact<k>` and probe parts it splits off a rule), a helper
+only where it also has the shape its kind has; any other rule, such as
+one the author named `_general`, is the author's.
+The TypeScript and Rust compilers write that text byte for byte
 alike, its keys in the order the compiler emits them, which is the
 grammar's rule order and its tokens' order, and the render reads both.
 Go's serializer writes the same spec with its keys in name order and the
