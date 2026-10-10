@@ -309,7 +309,9 @@ neither one class nor an escaped literal among them), a literal no one
 EBNF terminal spells, a token set whose tokens are not the class its name
 gives, a rule with no alternate to open with, a sequence's step with more
 alternates than a step, a rule the compiler lifted to a token whose name
-another rule holds, a name EBNF cannot spell, and Go's `tokenOrder`. The
+another rule holds,
+a start that is not the start wrapper every grammar text compiles
+to, a name EBNF cannot spell, and Go's `tokenOrder`. The
 tree builders every compiled grammar carries, and its marks, are not
 written, as the plan's declared subset says (an action or a mark is not
 written): the compiler makes them again from the rules, and a loss

@@ -61,7 +61,7 @@ const TRANSLATION: TranslationParts = Object.freeze({
       "A spec compiled from another notation compiles back under this package's own settings (the group tag on every alternate; GBNF's exact lexing is not kept), written in forms that match exactly what it matches and compile back as those forms: a case-insensitive literal (ABNF's default) of one letter as the class of its two cases and one holding no letter as a string, a lone character a string cannot hold as its code point, a counted repetition as its copies and nested options, an empty alternative, which W3C EBNF has no syntax for, by making the other alternatives optional, the class GBNF's dot compiles to as the class of every code point, and an RFC 5234 core rule as a rule of its own.",
       "A rule with two alternatives that each match nothing (*SP / *10CRLF), which another notation accepts and this package's front end refuses as ambiguous, is written as it stands, and does not compile back.",
       "The tree builders every compiled grammar carries (@node$, @capture$, @bubble$ and @fold$, with their k settings) and its marks are not written, since the compiler makes them again from the rules: a spec whose builders or marks are others compiles back with the compiler's own, and recognises what it recognised.",
-      "A spec the render cannot write as EBNF is refused with TARGET_VALUE_UNREPRESENTABLE, naming what it met: an action (a value annotation's builders, a user action, the probe dispatcher of an optional prefix), a condition or a counter other than a repetition's, an error generator or an alternate modifier, a function reference where a rule or a count is due, a set of tokens at one place, a removal, a clear or the form that edits a rule already installed, a token no EBNF terminal matches (a class whose flags change what it matches (no u on a class that is negated, reaches past U+FFFF or holds every code point, or u on one that holds a surrogate), a pattern that is neither one class nor an escaped literal, the empty literal, a case-insensitive literal holding a character past ASCII that may have cases: one of the Basic Multilingual Plane, or of a script past it that has them), a literal no one W3C EBNF terminal spells, since this front end reads whitespace between terminals and the run that would spell it would match the literal with whitespace inside (a case-insensitive literal holding a letter beside another character, a literal holding a control character or both quotes beside other characters), a rule or a group whose one alternative is empty, a token set whose tokens are not the class its name gives, a rule with no alternate to open with, a sequence's step with more alternates than a step, a rule the compiler lifted to a token whose name another rule holds, a rule name EBNF cannot spell, the empty name among them, a repetition bounded past what the compiler numbers, a repetition of no copies, whose item the spec does not keep, or a spec that gives its match tokens' order as a list of its own (Go's tokenOrder), whose rules' order, which ranks the tokens, is lost."
+      "A spec the render cannot write as EBNF is refused with TARGET_VALUE_UNREPRESENTABLE, naming what it met: an action (a value annotation's builders, a user action, the probe dispatcher of an optional prefix), a condition or a counter other than a repetition's, an error generator or an alternate modifier, a function reference where a rule or a count is due, a set of tokens at one place, a removal, a clear or the form that edits a rule already installed, a token no EBNF terminal matches (a class whose flags change what it matches (no u on a class that is negated, reaches past U+FFFF or holds every code point, or u on one that holds a surrogate), a pattern that is neither one class nor an escaped literal, the empty literal, a case-insensitive literal holding a character past ASCII that may have cases: one of the Basic Multilingual Plane, or of a script past it that has them), a literal no one W3C EBNF terminal spells, since this front end reads whitespace between terminals and the run that would spell it would match the literal with whitespace inside (a case-insensitive literal holding a letter beside another character, a literal holding a control character or both quotes beside other characters), a rule or a group whose one alternative is empty, a token set whose tokens are not the class its name gives, a rule with no alternate to open with, a sequence's step with more alternates than a step, a rule the compiler lifted to a token whose name another rule holds, a start that is not the start wrapper every grammar text compiles to (one open alternate that matches nothing and pushes a rule, closed by the end of the source alone), a rule name EBNF cannot spell, the empty name among them, a repetition bounded past what the compiler numbers, a repetition of no copies, whose item the spec does not keep, or a spec that gives its match tokens' order as a list of its own (Go's tokenOrder), whose rules' order, which ranks the tokens, is lost."
     ]
   }
 }
@@ -148,6 +148,11 @@ const TRANSLATION: TranslationParts = Object.freeze({
 ; the lexer tries two tokens a place expects), is lost. The tree
 ; builders and the marks are not written: the compiler makes them again
 ; from the rules.
+; A spec whose start is not the start wrapper every grammar text
+; compiles to (one open alternate that matches nothing and pushes a
+; rule, closed by the end of the source alone) is refused as well: its
+; text would compile back inside such a wrapper, whose close lets the
+; end of the source come after what the lexer skips.
 ;
 ; A literal no one EBNF terminal spells is refused too, since this front
 ; end reads whitespace between terminals and the run that would spell it
@@ -493,7 +498,7 @@ def ebnf-el-name [el]
 
 ; The start wrapper the compiler adds, which \`options.rule.start\` names:
 ; one open alternate that consumes nothing and pushes the grammar's start
-; rule, and nothing but the end of the source to close it.
+; rule, and the end of the source, and nothing else, to close it.
 def ebnf-wrapper [r]
   let [o (ebnf-open r)]
     match (count o)
@@ -501,8 +506,29 @@ def ebnf-wrapper [r]
         let [a (ebnf-at o 0)]
           match (match (ebnf-some (ebnf-s a)) (case true false) (case false (ebnf-full (ebnf-p a))))
             case false false
-            case true (ebnf-none (filter (fn [c] (ebnf-not (ebnf-same (string-join " " (ebnf-s c)) "#ZZ"))) (ebnf-close r)))
+            case true
+              let [c (ebnf-close r)]
+                match (count c)
+                  case 0 false
+                  case _ (ebnf-none (filter (fn [x] (ebnf-not (ebnf-wrapper-end x))) c))
       case _ false
+
+; A close alternate that matches the end of the source and goes nowhere.
+def ebnf-wrapper-end [alt]
+  match (ebnf-same (string-join " " (ebnf-s alt)) "#ZZ")
+    case false false
+    case true (ebnf-empty (ebnf-target alt))
+
+; Every grammar text compiles to a start wrapper around its start rule,
+; and the wrapper's close lets the end of the source come after what the
+; lexer skips (\`ab \` where the grammar is \`ab\`). So the rule
+; \`options.rule.start\` names must be that wrapper: a spec that starts at
+; another rule, or at a wrapper without its close, would come back
+; accepting what it refuses.
+def ebnf-check-start [cx]
+  match (ebnf-wrapper (ebnf-rule cx (get :start cx)))
+    case true true
+    case false (ebnf-fail (string-join "" ["the start rule " (get :start cx) " is not the start wrapper every grammar text compiles to (one open alternate that matches nothing and pushes a rule, closed by the end of the source alone)"]))
 
 ; ---- what the spec may hold
 
@@ -662,8 +688,9 @@ def ebnf-check [spec cx]
     case true (ebnf-fail "it clears the grammar it is installed on, which is not written")
     case _
       let [order (ebnf-check-order spec)]
-        let [rules (count (map (fn [name] (ebnf-check-rule cx name)) (keys (get :rules cx))))]
-          ebnf-check-sets cx (ebnf-used cx)
+        let [start (ebnf-check-start cx)]
+          let [rules (count (map (fn [name] (ebnf-check-rule cx name)) (keys (get :rules cx))))]
+            ebnf-check-sets cx (ebnf-used cx)
 
 ; ---- tokens
 
