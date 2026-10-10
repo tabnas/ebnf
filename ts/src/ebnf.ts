@@ -78,6 +78,9 @@ export type {
   EbnfGrammar,
 }
 
+export { translate } from './translate'
+export type { TranslationPart, TranslationParts } from './translate'
+
 
 // VERSION is this package's version. It MUST equal package.json
 // "version": the release orchestrator rewrites both, and the version
