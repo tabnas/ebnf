@@ -22,7 +22,7 @@ const { spawn } = require('node:child_process')
 const { after, test } = require('node:test')
 
 const { compileSpec } = require('@tabnas/bnf')
-const { ebnfConvert, translate } = require('..')
+const { ebnfConvert, emitGrammarSpec, parseEbnf, translate } = require('..')
 
 const ALCHEMY = process.env.TABNAS_ALCHEMY
 const skip = ALCHEMY ? false : 'TABNAS_ALCHEMY does not name the alchemy command'
@@ -433,4 +433,99 @@ test('the render writes a class member after a code point so that it does not ru
   // a literal's code point and the string after it, a terminal apart
   await writes('A ::= #x1F "ab"\n', 'A ::= #x1F "ab"\n')
   await writes('A ::= #x5C "bf"\n', 'A ::= "\\" "bf"\n')
+})
+
+// A counted repetition, which W3C EBNF has no syntax for, is written as
+// its copies and nested options, `( "a" ( "a" "a"? )? )?`: each copy past
+// the least count is an option, and each option but the innermost holds a
+// group, so each puts the item two levels deeper. This front end reads a
+// text back by compiling it, and its reader refuses a rule whose elements
+// nest more than 128 levels deep (the shared compiler's
+// MAX_ELEMENT_DEPTH, which the Rust reader the hosts run holds, and
+// rs/tests/translate_test.rs holds the render's limit to it). ABNF's
+// `g = "z" *200"a"` was written as 200 nested options, a text its reader
+// refuses; the render now refuses what would pass the limit, naming the
+// repetition and the level, and writes the largest repetition that fits.
+// EBNF text has no counted repetition, so the spec is the compiler's for
+// the IR ABNF reads `g = "z" *N"a"` to, a case-sensitive "a".
+function counted (min, max, wrap = (el) => el) {
+  const grammar = parseEbnf('g ::= "z" "a"\n')
+  const alt = grammar.productions[0].alts[0]
+  alt[1] = wrap({ kind: 'rep', min, max, inner: alt[1] })
+  return JSON.parse(compileSpec(emitGrammarSpec(grammar, { builtins: true, tag: 'ebnf' }),
+    { recognition: false, strict: true }))
+}
+
+// The text of n nested options of "a", as the render writes them.
+const nested = (n) => '( "a" '.repeat(n - 1) + '"a"?' + ' )?'.repeat(n - 1)
+
+// How deep a text's elements nest as this front end reads it: an element
+// of a rule's alternative at level 1, the inner element of `?`, `*` and
+// `+` and the elements of a group's alternatives a level deeper.
+function depth (text) {
+  const walk = (el) => ({ opt: 1, star: 1, plus: 1 })[el.kind]
+    ? 1 + walk(el.inner)
+    : 'group' === el.kind
+      ? 1 + Math.max(...el.alts.map((seq) => Math.max(0, ...seq.map(walk))))
+      : 1
+  return Math.max(...parseEbnf(text).productions.flatMap((p) =>
+    p.alts.map((seq) => Math.max(0, ...seq.map(walk)))))
+}
+
+test('the render refuses a counted repetition its nested options would write past what the reader reads back', { skip }, async () => {
+  for (const [min, max, opts, level] of [[0, 200, 200, 400], [0, 65, 65, 130], [3, 68, 65, 130]]) {
+    const out = await render(`a repetition of ${min} to ${max} copies`, counted(min, max))
+    Assert.equal(out.code, 'TARGET_VALUE_UNREPRESENTABLE', JSON.stringify(out))
+    Assert.match(out.message, new RegExp(`the repetition _gen1_rep_term of rule g, of up to ${max} ` +
+      `copies, would be written as ${opts} nested options, nesting its item ${level} levels deep, ` +
+      'past the 128 levels this front end reads back'))
+  }
+})
+
+test('the render writes the largest counted repetition the reader reads back', { skip }, async () => {
+  for (const [min, max] of [[0, 64], [3, 67]]) {
+    const out = await render(`a repetition of ${min} to ${max} copies`, counted(min, max))
+    const text = `g ::= "z" ${'"a" '.repeat(min)}${nested(64)}\n`
+    Assert.equal(out.text, text, JSON.stringify(out))
+    Assert.equal(depth(text), 128)
+    compileText(text)
+  }
+  // a bound alone, its copies, and the loop where there is none
+  Assert.equal((await render('a repetition of 3 copies', counted(3, 3))).text, 'g ::= "z" "a" "a" "a"\n')
+  Assert.equal((await render('a repetition of 2 copies or more', counted(2, Infinity))).text,
+    'g ::= "z" "a" "a" "a"*\n')
+})
+
+// The level counts what stands around the repetition, the option and the
+// group the render writes for an empty alternative among them, and an
+// element inside the repetition's item: a rule any element of which the
+// text would put past the limit is refused, naming the level and the
+// repetition around it.
+test('the render counts the levels around a counted repetition and inside its item', { skip }, async () => {
+  const inOption = (rep) => ({ kind: 'opt', inner: { kind: 'group', alts: [[{ kind: 'term', literal: 'b', caseSensitive: true }, rep]] } })
+  const out = await render('a repetition of 63 copies in an option', counted(0, 63, inOption))
+  Assert.equal(out.text, `g ::= "z" ( "b" ${nested(63)} )?\n`, JSON.stringify(out))
+  Assert.equal(depth(out.text), 128)
+  const past = await render('a repetition of 64 copies in an option', counted(0, 64, inOption))
+  Assert.equal(past.code, 'TARGET_VALUE_UNREPRESENTABLE', JSON.stringify(past))
+  Assert.match(past.message, /the repetition _gen1_rep_term of rule g, of up to 64 copies, would be written as 64 nested options, nesting its item 130 levels deep/)
+
+  const orNothing = (rep) => ({ kind: 'group', alts: [[rep], []] })
+  const empty = await render('a repetition of 62 copies or nothing', counted(0, 62, orNothing))
+  Assert.equal(empty.text, `g ::= "z" ( ( ${nested(62)} )? )\n`, JSON.stringify(empty))
+  Assert.equal(depth(empty.text), 127)
+  const emptyPast = await render('a repetition of 63 copies or nothing', counted(0, 63, orNothing))
+  Assert.equal(emptyPast.code, 'TARGET_VALUE_UNREPRESENTABLE', JSON.stringify(emptyPast))
+  Assert.match(emptyPast.message, /would be written as 63 nested options, nesting its item 129 levels deep/)
+
+  // an item of nine nested groups, of which 60 copies put the innermost
+  // "a" at level 120 + 9
+  const deepItem = (rep) => {
+    let item = { kind: 'group', alts: [[{ kind: 'term', literal: 'a', caseSensitive: true }, { kind: 'term', literal: 'b', caseSensitive: true }]] }
+    for (let i = 0; i < 8; i++) item = { kind: 'group', alts: [[item, { kind: 'term', literal: 'c', caseSensitive: true }]] }
+    return { ...rep, inner: item }
+  }
+  const inside = await render('a repetition of a deep item', counted(0, 60, deepItem))
+  Assert.equal(inside.code, 'TARGET_VALUE_UNREPRESENTABLE', JSON.stringify(inside))
+  Assert.match(inside.message, /rule g would be written with an element nested 129 levels deep, inside the repetition _gen10_rep__gen9_group, written as 60 nested options, past the 128 levels this front end reads back/)
 })

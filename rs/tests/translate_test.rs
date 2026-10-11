@@ -18,7 +18,7 @@ mod common;
 use std::fs;
 
 use serde_json::Value;
-use tabnas_bnf::{compile_spec, CompileOptions, ConvertOptions};
+use tabnas_bnf::{compile_spec, CompileOptions, ConvertOptions, MAX_ELEMENT_DEPTH};
 use tabnas_ebnf::ebnf_convert;
 
 fn translate() -> Value {
@@ -177,4 +177,55 @@ fn a_host_reads_a_document_as_the_strict_pure_data_grammar_spec() {
     assert_eq!(rules, ["Doc", "Greet", "__start__"]);
     assert_eq!(tree["options"]["rule"]["start"], "__start__");
     assert_eq!(tree["meta"]["provenance"]["__start__"], "Doc");
+}
+
+/// How deep the render may nest the text it writes, `ebnf-max-depth`,
+/// is the limit this front end's reader holds: the shared compiler's
+/// `MAX_ELEMENT_DEPTH`, which refuses a rule whose elements nest deeper
+/// (the front end's own caps, 130 levels and 129 nested groups, lie past
+/// it). The render refuses a counted repetition whose nested options
+/// would pass the limit, so a reader that moved it moves the render's
+/// with it, or the render writes what the reader refuses again.
+#[test]
+fn the_render_nests_no_deeper_than_the_reader_reads() {
+    let limit: usize = tabnas_ebnf::render_text()
+        .lines()
+        .find_map(|line| line.strip_prefix("def ebnf-max-depth "))
+        .expect("the render names its depth limit")
+        .trim()
+        .parse()
+        .expect("the render's depth limit is a number");
+    assert_eq!(limit, MAX_ELEMENT_DEPTH);
+}
+
+/// The text the render writes for the largest counted repetition that
+/// fits at a rule's top level, ABNF's `g = "z" *64"a"`: 64 nested options,
+/// an option and a group for each but the innermost, so the innermost "a"
+/// is at level 128, and the text reads back. One option more puts it at
+/// 130, which the reader refuses, as it refused the 200 the render once
+/// wrote for `*200"a"`; `ts/test/translate-render.test.js` holds the
+/// render to writing the one and refusing the others.
+#[test]
+fn the_largest_counted_repetition_the_render_writes_reads_back() {
+    let options = ConvertOptions {
+        builtins: true,
+        ..ConvertOptions::default()
+    };
+    let nested = |n: usize| {
+        format!(
+            "g ::= \"z\" {}\"a\"?{}\n",
+            "( \"a\" ".repeat(n - 1),
+            " )?".repeat(n - 1)
+        )
+    };
+    ebnf_convert(&nested(64), Some(&options)).expect("64 nested options read back");
+    let error = ebnf_convert(&nested(65), Some(&options)).expect_err("65 do not");
+    assert!(
+        error
+            .to_string()
+            .contains("rule 'g' nests elements more than 128 deep"),
+        "{error}"
+    );
+    let error = ebnf_convert(&nested(200), Some(&options)).expect_err("200 do not");
+    assert!(error.to_string().contains("nests too deeply"), "{error}");
 }

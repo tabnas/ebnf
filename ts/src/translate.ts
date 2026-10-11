@@ -58,10 +58,10 @@ const TRANSLATION: TranslationParts = Object.freeze({
       "Terminals are written in W3C EBNF's forms: a literal as a string in double quotes, or in single quotes where it holds a double quote, and a code point term (#xB7) as the string it matches; a class as a bracket expression whose members are printable ASCII characters or code points (#xC0), a member that would begin with a hexadecimal digit right after a code point written as a code point too, since W3C EBNF reads a code point's digits for as long as they go (#x5Cb is U+5CB); the engine's TX, NR, ST and VL by their names; and a rule the compiler made a token of (plus ::= \\"+\\", referenced as plus) as that rule, after the others.",
       "A rule the compiler made a token of, whose name is one the compiler could give its literal by itself (B ::= \\"b\\", or any name of capitals, digits and underscores where the literal holds a character past ASCII), cannot be told from that literal and is written as the literal: it compiles back with the token later in the token table, or under the name the literal gives it.",
       "Repetitions are written in W3C EBNF's postfix forms, A*, A+ and A?, stacked where a repetition is itself repeated (A+?).",
-      "A spec compiled from another notation compiles back under this package's own settings (the group tag on every alternate; GBNF's exact lexing is not kept), written in forms that match exactly what it matches and compile back as those forms: a case-insensitive literal (ABNF's default) of one letter as the class of its two cases and one holding no letter as a string, a lone character a string cannot hold as its code point, a counted repetition as its copies and nested options, an empty alternative, which W3C EBNF has no syntax for, by making the other alternatives optional, the class GBNF's dot compiles to as the class of every code point, and an RFC 5234 core rule as a rule of its own.",
+      "A spec compiled from another notation compiles back under this package's own settings (the group tag on every alternate; GBNF's exact lexing is not kept), written in forms that match exactly what it matches and compile back as those forms: a case-insensitive literal (ABNF's default) of one letter as the class of its two cases and one holding no letter as a string, a lone character a string cannot hold as its code point, a counted repetition as its copies and nested options, as deep as this package's reader reads back, an empty alternative, which W3C EBNF has no syntax for, by making the other alternatives optional, the class GBNF's dot compiles to as the class of every code point, and an RFC 5234 core rule as a rule of its own.",
       "A rule with two alternatives that each match nothing (*SP / *10CRLF), which another notation accepts and this package's front end refuses as ambiguous, is written as it stands, and does not compile back.",
       "The tree builders every compiled grammar carries (@node$, @capture$, @bubble$ and @fold$, with their k settings) and its marks are not written, since the compiler makes them again from the rules: a spec whose builders or marks are others compiles back with the compiler's own, and recognises what it recognised.",
-      "A spec the render cannot write as EBNF is refused with TARGET_VALUE_UNREPRESENTABLE, naming what it met: an action (a value annotation's builders, a user action, the probe dispatcher of an optional prefix), a condition or a counter other than a repetition's, an error generator or an alternate modifier, a function reference where a rule or a count is due, a set of tokens at one place, a removal, a clear or the form that edits a rule already installed, a token no EBNF terminal matches (a class whose flags change what it matches (no u on a class that is negated, reaches past U+FFFF or holds every code point, or u on one that holds a surrogate), a pattern that is neither one class nor an escaped literal, the empty literal, a case-insensitive literal holding a character past ASCII that may have cases: one of the Basic Multilingual Plane, or of a script past it that has them), a literal no one W3C EBNF terminal spells, since this front end reads whitespace between terminals and the run that would spell it would match the literal with whitespace inside (a case-insensitive literal holding a letter beside another character, a literal holding a control character or both quotes beside other characters), a rule or a group whose one alternative is empty, a token set whose tokens are not the class its name gives, a rule with no alternate to open with, a sequence's step with more alternates than a step, a rule the compiler lifted to a token whose name another rule holds, a start that is not the start wrapper every grammar text compiles to (one open alternate that matches nothing and pushes a rule, closed by the end of the source alone), a rule name EBNF cannot spell, the empty name among them, a repetition bounded past what the compiler numbers, a repetition of no copies, whose item the spec does not keep, or a spec that gives its match tokens' order as a list of its own (Go's tokenOrder), whose rules' order, which ranks the tokens, is lost."
+      "A spec the render cannot write as EBNF is refused with TARGET_VALUE_UNREPRESENTABLE, naming what it met: an action (a value annotation's builders, a user action, the probe dispatcher of an optional prefix), a condition or a counter other than a repetition's, an error generator or an alternate modifier, a function reference where a rule or a count is due, a set of tokens at one place, a removal, a clear or the form that edits a rule already installed, a token no EBNF terminal matches (a class whose flags change what it matches (no u on a class that is negated, reaches past U+FFFF or holds every code point, or u on one that holds a surrogate), a pattern that is neither one class nor an escaped literal, the empty literal, a case-insensitive literal holding a character past ASCII that may have cases: one of the Basic Multilingual Plane, or of a script past it that has them), a literal no one W3C EBNF terminal spells, since this front end reads whitespace between terminals and the run that would spell it would match the literal with whitespace inside (a case-insensitive literal holding a letter beside another character, a literal holding a control character or both quotes beside other characters), a rule or a group whose one alternative is empty, a token set whose tokens are not the class its name gives, a rule with no alternate to open with, a sequence's step with more alternates than a step, a rule the compiler lifted to a token whose name another rule holds, a start that is not the start wrapper every grammar text compiles to (one open alternate that matches nothing and pushes a rule, closed by the end of the source alone), a rule name EBNF cannot spell, the empty name among them, a repetition bounded past what the compiler numbers, a repetition of no copies, whose item the spec does not keep, text nested deeper than this package's reader reads back, 128 levels, an element of a rule's alternative being at level 1 and each group and postfix operator around one a level more (a counted repetition is written as nested options, an option and a group for each copy past its least count, so a repetition whose innermost copy would pass the limit is refused, naming the repetition and the level: at a rule's top level, one of more than 64 copies past its least count; and a rule whose text would put any other element past it is refused, naming the rule and the level), or a spec that gives its match tokens' order as a list of its own (Go's tokenOrder), whose rules' order, which ranks the tokens, is lost."
     ]
   }
 }
@@ -173,6 +173,12 @@ const TRANSLATION: TranslationParts = Object.freeze({
 ; alternative by making the others optional, \`[\\s\\S]\` (GBNF's \`.\`) as the
 ; class of every code point, and an RFC 5234 core rule as a rule of its
 ; own.
+;
+; No text is written nested deeper than this front end reads back, 128
+; levels (see "how deep the text nests"): a counted repetition whose
+; nested options would put its item past that is refused, naming the
+; repetition and the level, and so is a rule any other element of which
+; would be written past it, naming the rule and the level.
 ;
 ; The whole spec is materialized before a line is written: a rule's
 ; alternatives are spread over its chain rules and helpers, which the
@@ -1891,16 +1897,104 @@ def ebnf-token-items [cx lifted t]
           case :class [(ebnf-class-text (get :pat info))]
           case :engine [(get :name info)]
 
+; ---- how deep the text nests
+;
+; This front end reads a grammar text back by compiling it, and its
+; reader refuses a rule whose elements nest more than 128 levels deep:
+; the shared compiler's MAX_ELEMENT_DEPTH, which the Rust reader the hosts
+; run inherits. Its own caps, 130 levels and 129 nested groups, lie past
+; that; the TypeScript reader holds no fixed cap (its stack runs out some
+; hundreds of levels further) and the Go reader none. An element of a
+; rule's alternative is at level 1, and each group and each postfix
+; operator written around an element puts it one level deeper: in
+; \`"a" ( "a" "a"? )?\` the last "a" is at level 4, inside the option, the
+; group and the option. The render writes nothing deeper than the limit.
+def ebnf-max-depth 128
+
+; Where an element is written: the rule (\`:rule\`), the level its elements
+; stand at (\`:at\`, 1 for a rule's alternatives), and the counted
+; repetition written as the most nested options around it (\`:rep\`, ""
+; where none, \`:opts\` how many), which a refusal names.
+def ebnf-pos [rule at rep opts]
+  record
+    entry :rule rule
+    entry :at at
+    entry :rep rep
+    entry :opts opts
+
+def ebnf-deeper [pos k]
+  ebnf-pos (get :rule pos) (ebnf-plus (get :at pos) k) (get :rep pos) (get :opts pos)
+
+def ebnf-at-level [pos at]
+  ebnf-pos (get :rule pos) at (get :rep pos) (get :opts pos)
+
+def ebnf-in-rep [pos name opts]
+  match (ebnf-less (get :opts pos) opts)
+    case true (ebnf-pos (get :rule pos) (get :at pos) name opts)
+    case false pos
+
+; A terminal or a reference, written at its level. Every group and option
+; the render writes holds one, so no element is deeper than the deepest
+; of these; one past the limit refuses its rule.
+def ebnf-leaf [pos text]
+  match (ebnf-less ebnf-max-depth (get :at pos))
+    case false text
+    case true (ebnf-fail (string-join "" ["rule " (get :rule pos) " would be written with an element nested " (ebnf-num (get :at pos)) " levels deep" (ebnf-in-rep-text pos) ", past the " (ebnf-num ebnf-max-depth) " levels this front end reads back"]))
+
+def ebnf-in-rep-text [pos]
+  match (get :rep pos)
+    case "" ""
+    case rep (string-join "" [", inside the repetition " rep ", written as " (ebnf-num (get :opts pos)) " nested options"])
+
 ; A counted repetition, which W3C EBNF has no syntax for, as its copies:
 ; the item as many times as the least count, then the item repeated
 ; (\`x*\`) where there is no bound, or the nested options up to the bound
-; (\`( x x? )?\`).
-def ebnf-rep-text [self cx lifted name]
-  let [parts (ebnf-rep-parts cx name)]
-    let [atom (self self cx lifted :atom (get :item parts))]
+; (\`( x x? )?\`). Each of those options but the innermost holds a group,
+; so n of them put the innermost copy of the item 2n - 1 levels below the
+; first: where that would pass what this front end reads back, the
+; repetition is refused before its text is made. The item's text is the
+; same at every level, so it is made once, at the level of its deepest
+; copy, where any element inside it that would pass the limit is found.
+def ebnf-rep-text [self cx lifted pos name]
+  let [parts (ebnf-rep-plan pos name (ebnf-rep-parts cx name))]
+    let [atom (self self cx lifted (ebnf-at-level (ebnf-in-rep pos name (get :opts parts)) (get :deep parts)) :atom (get :item parts))]
       let [lead (map (fn [i] atom) (indices (ebnf-ones (get :min parts))))]
-        let [rest (match (get :max parts) (case "" [(string-join "" [atom "*"])]) (case max (ebnf-rep-options atom (count (ebnf-drop (get :min parts) (ebnf-ones (number max)))))))]
+        let [rest (match (get :max parts) (case "" [(string-join "" [atom "*"])]) (case _ (ebnf-rep-options atom (get :opts parts))))]
           string-join " " (ebnf-cat lead rest)
+
+; A counted repetition's parts, with how many nested options it is
+; written as (\`:opts\`) and the level of its item's deepest copy
+; (\`:deep\`), once it is found to fit.
+def ebnf-rep-plan [pos name parts]
+  let [opts (match (get :max parts) (case "" 0) (case max (count (ebnf-drop (get :min parts) (ebnf-ones (number max))))))]
+    let [deep (ebnf-rep-depth pos parts opts)]
+      let [fits (ebnf-check-rep pos name parts opts deep)]
+        record
+          entry :item (get :item parts)
+          entry :min (get :min parts)
+          entry :max (get :max parts)
+          entry :opts opts
+          entry :deep deep
+
+; The level of a counted repetition's deepest copy of its item: below the
+; option of each copy past the least count and the group of each of those
+; but the innermost, below the loop where there is no bound, and beside
+; the others where there is one count.
+def ebnf-rep-depth [pos parts opts]
+  match (get :max parts)
+    case "" (ebnf-plus (get :at pos) 1)
+    case _
+      match opts
+        case 0 (get :at pos)
+        case _ (ebnf-plus (ebnf-plus (get :at pos) opts) (count (ebnf-rest (ebnf-ones opts))))
+
+def ebnf-check-rep [pos name parts opts deep]
+  match opts
+    case 0 true
+    case _
+      match (ebnf-less ebnf-max-depth deep)
+        case false true
+        case true (ebnf-fail (string-join "" ["the repetition " name " of rule " (get :rule pos) ", of up to " (get :max parts) " copies, would be written as " (ebnf-num opts) " nested options, nesting its item " (ebnf-num deep) " levels deep, past the " (ebnf-num ebnf-max-depth) " levels this front end reads back"]))
 
 def ebnf-rep-options [atom depth]
   match depth
@@ -1912,66 +2006,75 @@ def ebnf-rep-options [atom depth]
 ; The element a postfix applies to: a terminal, a rule, a group, or
 ; another postfixed element, which this dialect stacks (\`x+?\`); a literal
 ; of more than one item is put in a group.
-def ebnf-atom-text [self cx lifted el]
+def ebnf-atom-text [self cx lifted pos el]
   match (get :k el)
     case :tok
       let [items (ebnf-token-items cx lifted (get :name el))]
         match (count items)
-          case 1 (ebnf-at items 0)
-          case _ (string-join "" ["( " (string-join " " items) " )"])
+          case 1 (ebnf-leaf pos (ebnf-at items 0))
+          case _ (string-join "" ["( " (string-join " " (map (fn [item] (ebnf-leaf (ebnf-deeper pos 1) item)) items)) " )"])
     case :ref
       match (ebnf-helper-kind cx (get :name el))
-        case "rep" (string-join "" ["( " (self self cx lifted :el el) " )"])
-        case _ (self self cx lifted :el el)
-    case _ (self self cx lifted :el el)
+        case "rep" (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 1) :el el) " )"])
+        case _ (self self cx lifted pos :el el)
+    case _ (self self cx lifted pos :el el)
 
-def ebnf-el-text [self cx lifted el]
+def ebnf-el-text [self cx lifted pos el]
   match (get :k el)
-    case :tok (string-join " " (ebnf-token-items cx lifted (get :name el)))
-    case :tail (string-join "" ["( " (self self cx lifted :alts [(get :seq el)]) " )?"])
-    case :grp (string-join "" ["( " (self self cx lifted :alts [(get :seq el)]) " )"])
+    case :tok (string-join " " (map (fn [item] (ebnf-leaf pos item)) (ebnf-token-items cx lifted (get :name el))))
+    case :tail (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 2) :alts [(get :seq el)]) " )?"])
+    case :grp (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 1) :alts [(get :seq el)]) " )"])
     case :ref
       let [name (get :name el)]
         match (ebnf-helper-kind cx name)
-          case "" (ebnf-ref-text name)
-          case "star" (string-join "" [(self self cx lifted :atom (ebnf-loop-item cx name (ebnf-rule cx name))) "*"])
+          case "" (ebnf-leaf pos (ebnf-ref-text name))
+          case "star" (string-join "" [(self self cx lifted (ebnf-deeper pos 1) :atom (ebnf-loop-item cx name (ebnf-rule cx name))) "*"])
           case "plus"
             let [seq (ebnf-at (ebnf-alts cx name) 0)]
-              string-join "" [(self self cx lifted :atom (ebnf-at seq 0)) "+"]
+              string-join "" [(self self cx lifted (ebnf-deeper pos 1) :atom (ebnf-at seq 0)) "+"]
           case "opt"
             let [inner (ebnf-at (ebnf-filled (ebnf-alts cx name)) 0)]
-              string-join "" [(self self cx lifted :atom inner) "?"]
-          case "rep" (ebnf-rep-text self cx lifted name)
-          case "group" (string-join "" ["( " (self self cx lifted :alts (ebnf-alts cx name)) " )"])
+              string-join "" [(self self cx lifted (ebnf-deeper pos 1) :atom inner) "?"]
+          case "rep" (ebnf-rep-text self cx lifted pos name)
+          case "group" (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 1) :alts (ebnf-alts cx name)) " )"])
           case kind (ebnf-fail (string-join "" ["the rule " name " is a helper of a kind the render does not read (" kind ")"]))
 
-def ebnf-seq-text [self cx lifted seq]
-  string-join " " (map (fn [el] (self self cx lifted :el el)) seq)
+def ebnf-seq-text [self cx lifted pos seq]
+  string-join " " (map (fn [el] (self self cx lifted pos :el el)) seq)
+
+; Where alternatives' elements stand: where \`pos\` says, or two levels
+; deeper where an empty one makes the others optional, \`( ... )?\`.
+def ebnf-alts-pos [pos filled x]
+  match (compare (count filled) (count x))
+    case :equal pos
+    case _ (ebnf-deeper pos 2)
 
 ; The text of a rule's or a group's alternatives (\`:alts\`, \`|\` between
 ; them), of an element (\`:el\`) and of the element a postfix applies to
 ; (\`:atom\`): the one function the render recurses through, as \`self\`, a
-; helper's alternatives a level deeper. W3C EBNF has no empty
-; alternative, so alternatives that hold one are written as the others
-; made optional, \`( ... )?\`, which matches the same.
-def ebnf-text [self cx lifted mode x]
+; helper's alternatives a level deeper, each written where \`pos\` says, a
+; group's elements and a postfix's element one level below it. W3C EBNF
+; has no empty alternative, so alternatives that hold one are written as
+; the others made optional, \`( ... )?\`, which matches the same and puts
+; them two levels deeper.
+def ebnf-text [self cx lifted pos mode x]
   match mode
     case :alts
       let [filled (filter ebnf-some x)]
-        let [text (string-join " | " (map (fn [seq] (ebnf-seq-text self cx lifted seq)) filled))]
+        let [text (string-join " | " (map (fn [seq] (ebnf-seq-text self cx lifted (ebnf-alts-pos pos filled x) seq)) filled))]
           match (count filled)
             case 0 (ebnf-fail "a rule or a group whose one alternative is empty, which W3C EBNF has no syntax for")
             case _
               match (compare (count filled) (count x))
                 case :equal text
                 case _ (string-join "" ["( " text " )?"])
-    case :el (ebnf-el-text self cx lifted x)
-    case :atom (ebnf-atom-text self cx lifted x)
+    case :el (ebnf-el-text self cx lifted pos x)
+    case :atom (ebnf-atom-text self cx lifted pos x)
 
 ; ---- the file
 
 def ebnf-production [cx cands lifted name]
-  string-join "" [(ebnf-ref-text name) " ::= " (ebnf-text ebnf-text cx lifted :alts (ebnf-unsub cx cands name (ebnf-alts cx name)))]
+  string-join "" [(ebnf-ref-text name) " ::= " (ebnf-text ebnf-text cx lifted (ebnf-pos name 1 "" 0) :alts (ebnf-unsub cx cands name (ebnf-alts cx name)))]
 
 def ebnf-lifted-production [cx t]
   let [info (ebnf-token cx t)]
