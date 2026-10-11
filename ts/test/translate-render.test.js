@@ -18,7 +18,7 @@ const Assert = require('node:assert/strict')
 const Fs = require('node:fs')
 const Os = require('node:os')
 const Path = require('node:path')
-const { spawnSync } = require('node:child_process')
+const { spawn } = require('node:child_process')
 const { after, test } = require('node:test')
 
 const { compileSpec } = require('@tabnas/bnf')
@@ -27,43 +27,99 @@ const { ebnfConvert, translate } = require('..')
 const ALCHEMY = process.env.TABNAS_ALCHEMY
 const skip = ALCHEMY ? false : 'TABNAS_ALCHEMY does not name the alchemy command'
 
+// Every transient task reports progress at least every 30 seconds
+// (AGENTS.md), so the command runs asynchronously, and while a run is out
+// a line names it and the time it has taken, every BEAT_MS. A run takes
+// a second or two; LIMIT_MS only stops a command that has hung.
+const BEAT_MS = 25000
+const LIMIT_MS = 120000
+
 const compileText = (src) =>
   compileSpec(ebnfConvert(src, { builtins: true }), { recognition: false, strict: true })
 const compile = (src) => JSON.parse(compileText(src))
 
 let dir = null
+let runs = 0
+let current = null
+let beat = null
 after(() => {
+  if (beat) clearInterval(beat)
   if (dir) Fs.rmSync(dir, { recursive: true, force: true })
 })
 
+// A text short enough to name a run by, on one line.
+function brief (text) {
+  const s = String(text).replace(/\s+/g, ' ').trim()
+  return 48 < s.length ? s.slice(0, 47) + '…' : s
+}
+
 // The render over a spec: `{ text }` when it writes one, and the failure
-// the command reports (`{ code, message }`) when it does not.
-function render (spec) {
+// the command reports (`{ code, message }`) when it does not. `what` names
+// the run in the progress line.
+function render (what, spec) {
   if (null == dir) {
     dir = Fs.mkdtempSync(Path.join(Os.tmpdir(), 'ebnf-render-'))
     Fs.writeFileSync(Path.join(dir, 'render.alc'),
       translate().render.source + '\ndef export [input] (ebnf-render input)\n')
   }
+  if (null == beat) {
+    beat = setInterval(() => {
+      if (current) {
+        console.log(`render ${current.n}, ${current.what}: ` +
+          `${Math.round((Date.now() - current.start) / 1000)}s so far, percentage unknown`)
+      }
+    }, BEAT_MS)
+    beat.unref()
+  }
   const input = Path.join(dir, 'spec.json')
   Fs.writeFileSync(input, JSON.stringify(spec, null, 2))
-  const run = spawnSync(ALCHEMY, ['run', Path.join(dir, 'render.alc'), input],
-    { encoding: 'utf8', timeout: 120000 })
-  if (0 === run.status) return { text: run.stdout }
-  try {
-    return JSON.parse(run.stderr)
-  } catch (e) {
-    return { code: 'NOT_JSON', message: `${run.stderr} ${run.error ?? ''}` }
-  }
+  const now = { n: ++runs, what, start: Date.now() }
+  current = now
+  const run = spawn(ALCHEMY, ['run', Path.join(dir, 'render.alc'), input],
+    { stdio: ['ignore', 'pipe', 'pipe'] })
+  let stdout = ''
+  let stderr = ''
+  run.stdout.setEncoding('utf8').on('data', (d) => { stdout += d })
+  run.stderr.setEncoding('utf8').on('data', (d) => { stderr += d })
+  // At the limit the command is killed and its output closed, as
+  // spawnSync's timeout closed it: a command that started others would
+  // leave them holding the output open past the limit.
+  let stopped = false
+  const stop = setTimeout(() => {
+    stopped = true
+    run.kill('SIGKILL')
+    run.stdout.destroy()
+    run.stderr.destroy()
+  }, LIMIT_MS)
+  return new Promise((resolve) => {
+    const done = (out) => {
+      clearTimeout(stop)
+      if (current === now) current = null
+      resolve(out)
+    }
+    run.on('error', (e) => done({ code: 'NOT_RUN', message: String(e) }))
+    run.on('close', (status, signal) => {
+      if (0 === status) return done({ text: stdout })
+      if (stopped) {
+        return done({ code: 'STOPPED', message: `${what}: stopped after ${LIMIT_MS / 1000}s` })
+      }
+      try {
+        done(JSON.parse(stderr))
+      } catch (e) {
+        done({ code: 'NOT_JSON', message: `${stderr} ${signal ?? ''}` })
+      }
+    })
+  })
 }
 
-function writes (src, text, change = (spec) => spec) {
-  const out = render(change(compile(src)))
+async function writes (src, text, change = (spec) => spec) {
+  const out = await render(`the round trip of ${brief(src)}`, change(compile(src)))
   Assert.equal(out.text, text, JSON.stringify(out))
   Assert.equal(compileText(out.text), compileText(src))
 }
 
-function refuses (src, change, what) {
-  const out = render(change(compile(src)))
+async function refuses (src, change, what) {
+  const out = await render(`the refusal ${brief(what)}`, change(compile(src)))
   Assert.equal(out.code, 'TARGET_VALUE_UNREPRESENTABLE', JSON.stringify(out))
   Assert.match(out.message, what)
 }
@@ -72,20 +128,20 @@ const KEYWORD = 'Start ::= "if" Word\nWord ::= [a-z]+\n'
 const CLASS = '#RX___U0061__U007A'
 const alt = (spec, rule = 'Start') => spec.rule[rule].open[0]
 
-test('the render writes a compiled grammar back as the text it compiles from', { skip }, () => {
-  writes(KEYWORD, KEYWORD)
+test('the render writes a compiled grammar back as the text it compiles from', { skip }, async () => {
+  await writes(KEYWORD, KEYWORD)
 })
 
 // This front end reads whitespace between terminals, so a literal is
 // written as one terminal or not at all: one that would take a run of
 // them would match the literal with whitespace inside.
-test('the render refuses a literal no one W3C EBNF terminal spells', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a literal no one W3C EBNF terminal spells', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     delete spec.options.fixed.token['#IF']
     spec.options.match.token['#IF'] = '@~/^if/i'
     return spec
   }, /the case-insensitive literal "if" is no one W3C EBNF terminal: it would be written as \[iI\] \[fF\]/)
-  refuses(KEYWORD, (spec) => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.fixed.token['#IF'] = 'i\tf'
     return spec
   }, /the literal "i\\tf" is no one W3C EBNF terminal: it would be written as "i" #x9 "f"/)
@@ -93,37 +149,37 @@ test('the render refuses a literal no one W3C EBNF terminal spells', { skip }, (
 
 // The engine reads `s` as a string of token names or as a list of them,
 // one place each; the two are the same sequence.
-test('the render reads the list form of the tokens an alternate matches', { skip }, () => {
-  writes(KEYWORD, KEYWORD, (spec) => {
+test('the render reads the list form of the tokens an alternate matches', { skip }, async () => {
+  await writes(KEYWORD, KEYWORD, (spec) => {
     alt(spec).s = ['#IF']
     return spec
   })
 })
 
-test('the render refuses a set of tokens at one place', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a set of tokens at one place', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).s = ['#IF ' + CLASS]
     return spec
   }, /rule Start has an alternate whose s holds, at one place, a set of tokens/)
 })
 
-test('the render refuses a rule name EBNF cannot spell, the empty name among them', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a rule name EBNF cannot spell, the empty name among them', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.rule[''] = spec.rule.Word
     return spec
   }, /the rule "" has a name EBNF cannot spell/)
 })
 
 // A class pattern is one class: `[`, its members, and `]` at the end.
-test('the render refuses a pattern that only begins with a class', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a pattern that only begins with a class', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.match.token[CLASS] = '@~/^[\\u0061-\\u007a]+/u'
     return spec
   }, /the token #RX___U0061__U007A is the pattern .*, which is not one class the render reads/)
 })
 
-test('the render refuses a class whose flags change what it matches', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a class whose flags change what it matches', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.match.token[CLASS] = '@~/^[\\u0061-\\u007a]/i'
     return spec
   }, /whose flags \(i\) change what it matches/)
@@ -132,37 +188,37 @@ test('the render refuses a class whose flags change what it matches', { skip }, 
 // A case-insensitive literal's pattern (ABNF's) escapes every character
 // a pattern reads otherwise; one that does not is a pattern, not a
 // literal.
-test('the render refuses a case-insensitive pattern that is not an escaped literal', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a case-insensitive pattern that is not an escaped literal', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.match.token[CLASS] = '@~/^if+/i'
     return spec
   }, /the token #RX___U0061__U007A is the pattern .*, which is not a literal the render reads/)
 })
 
-test('the render refuses the form that edits a rule already installed', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses the form that edits a rule already installed', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.rule.Word.open = { alts: spec.rule.Word.open, inject: { append: true } }
     return spec
   }, /rule Word gives its open alternates as alts and an inject/)
 })
 
-test('the render refuses an error generator and an alternate modifier', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses an error generator and an alternate modifier', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).e = '@stop'
     return spec
   }, /rule Start has an alternate carrying e \(an error generator\)/)
-  refuses(KEYWORD, (spec) => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).h = '@change'
     return spec
   }, /rule Start has an alternate carrying h \(an alternate modifier\)/)
 })
 
-test('the render refuses a function reference where a rule or a count is due', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a function reference where a rule or a count is due', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).p = '@choose'
     return spec
   }, /rule Start has an alternate whose p is the function reference @choose/)
-  refuses(KEYWORD, (spec) => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).b = '@back'
     return spec
   }, /rule Start has an alternate whose b is not a count/)
@@ -170,12 +226,12 @@ test('the render refuses a function reference where a rule or a count is due', {
 
 // A repetition's loop guards and counts with `c` and `n`; anywhere else
 // they would make an alternate conditional.
-test('the render refuses a condition or a counter outside a repetition\'s loop', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a condition or a counter outside a repetition\'s loop', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).c = { 'n.rep': 0 }
     return spec
   }, /rule Start carries a condition or a counter outside a repetition's loop/)
-  refuses(KEYWORD, (spec) => {
+  await refuses(KEYWORD, (spec) => {
     alt(spec).n = { rep: 1 }
     return spec
   }, /rule Start carries a condition or a counter outside a repetition's loop/)
@@ -184,8 +240,8 @@ test('the render refuses a condition or a counter outside a repetition\'s loop',
 // Go writes a spec's keys in name order and its match tokens' order in a
 // list of its own, so the rules' order, which ranks the tokens and so
 // decides which of two that both match wins, is gone.
-test('the render refuses a spec that gives its match tokens\' order as a list', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a spec that gives its match tokens\' order as a list', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.match.token['#RX___U0030__U0039'] = '@~/^[\\u0030-\\u0039]/'
     spec.options.match.tokenOrder = Object.keys(spec.options.match.token)
     return spec
@@ -198,20 +254,20 @@ test('the render refuses a spec that gives its match tokens\' order as a list', 
 // a class the flags its text compiles back with, so a class whose flags
 // are others is refused, and a class of other characters, matched alike
 // either way, is written whatever its flags.
-test('the render refuses a class whose flags are not the ones its text compiles back with', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a class whose flags are not the ones its text compiles back with', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.match.token[CLASS] = '@~/^[\\s\\S]/'
     return spec
   }, /is the class @~\/\^\[\\s\\S\]\/, whose flags \(none\) change what it matches/)
-  refuses('A ::= [^a]\n', (spec) => {
+  await refuses('A ::= [^a]\n', (spec) => {
     spec.options.match.token['#RX____U0061'] = '@~/^[^\\u0061]/'
     return spec
   }, /whose flags \(none\) change what it matches/)
-  refuses(KEYWORD, (spec) => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.match.token[CLASS] = '@~/^[\\ud800-\\udbff]/u'
     return spec
   }, /whose flags \(u\) change what it matches/)
-  writes(KEYWORD, KEYWORD, (spec) => {
+  await writes(KEYWORD, KEYWORD, (spec) => {
     spec.options.match.token[CLASS] = '@~/^[\\u0061-\\u007a]/u'
     return spec
   })
@@ -219,8 +275,8 @@ test('the render refuses a class whose flags are not the ones its text compiles 
 
 // `meta.provenance` names the rules the compiler made; where a spec has
 // none, the start wrapper `options.rule.start` names is read by its shape.
-test('the render reads the start wrapper by its shape where the spec names no provenance', { skip }, () => {
-  writes(KEYWORD, KEYWORD, (spec) => {
+test('the render reads the start wrapper by its shape where the spec names no provenance', { skip }, async () => {
+  await writes(KEYWORD, KEYWORD, (spec) => {
     delete spec.meta
     return spec
   })
@@ -229,15 +285,15 @@ test('the render reads the start wrapper by its shape where the spec names no pr
 // A case-insensitive literal's pattern without `u` folds no character
 // past U+FFFF, and none of those outside the scripts with cases has any,
 // so a string matches them exactly.
-test('the render writes a caseless character of a case-insensitive literal as a string', { skip }, () => {
+test('the render writes a caseless character of a case-insensitive literal as a string', { skip }, async () => {
   const spec = compile(KEYWORD)
   delete spec.options.fixed.token['#IF']
   spec.options.match.token['#T'] = '@~/^\u{1F600}/i'
   alt(spec).s = '#T'
-  const out = render(spec)
+  const out = await render('a caseless character past U+FFFF', spec)
   Assert.equal(out.text, 'Start ::= "\u{1F600}" Word\nWord ::= [a-z]+\n', JSON.stringify(out))
   spec.options.match.token['#T'] = '@~/^\u{10400}/i'
-  const cased = render(spec)
+  const cased = await render('a cased character past U+FFFF', spec)
   Assert.equal(cased.code, 'TARGET_VALUE_UNREPRESENTABLE', JSON.stringify(cased))
   Assert.match(cased.message, /holds a character past ASCII that may have cases/)
 })
@@ -246,20 +302,20 @@ test('the render writes a caseless character of a case-insensitive literal as a 
 // token set named for the class; the render writes the class the name
 // gives, so the set's tokens must be that class.
 const SETS = 'A ::= B | C\nB ::= [a-z]\nC ::= [0-9a-f]\n'
-test('the render refuses a token set whose tokens are not the class its name gives', { skip }, () => {
-  writes(SETS, SETS)
-  refuses(SETS, (spec) => {
+test('the render refuses a token set whose tokens are not the class its name gives', { skip }, async () => {
+  await writes(SETS, SETS)
+  await refuses(SETS, (spec) => {
     spec.options.tokenSet[CLASS.slice(1)].push('#RXA___U0030__U0039')
     return spec
   }, /the token set #RX___U0061__U007A lays tokens over its class \[\\u0061-\\u007a\] that match other characters than the class does/)
-  refuses(SETS, (spec) => {
+  await refuses(SETS, (spec) => {
     spec.options.tokenSet[CLASS.slice(1)].pop()
     return spec
   }, /the token set #RX___U0061__U007A lays tokens over its class/)
 })
 
-test('the render refuses a rule with no alternate to open with', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a rule with no alternate to open with', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.rule.Word.open = []
     spec.rule.Word.close = []
     return spec
@@ -268,10 +324,10 @@ test('the render refuses a rule with no alternate to open with', { skip }, () =>
 
 // A sequence compiles to a chain of steps, each one open alternate and at
 // most one close alternate naming the next step.
-test('the render refuses a sequence\'s step with more alternates than a step', { skip }, () => {
+test('the render refuses a sequence\'s step with more alternates than a step', { skip }, async () => {
   const SEQ = 'A ::= "a" W "b" W\nW ::= [a-z]\n'
-  writes(SEQ, SEQ)
-  refuses(SEQ, (spec) => {
+  await writes(SEQ, SEQ)
+  await refuses(SEQ, (spec) => {
     const other = JSON.parse(JSON.stringify(spec.rule.A.open[0]))
     other.s = '#B'
     spec.rule.A.open.push(other)
@@ -281,8 +337,8 @@ test('the render refuses a sequence\'s step with more alternates than a step', {
 
 // A token named for a rule the compiler lifted is written as that rule,
 // and two rules of one name would be one.
-test('the render refuses a lifted rule whose name another rule holds', { skip }, () => {
-  refuses(KEYWORD, (spec) => {
+test('the render refuses a lifted rule whose name another rule holds', { skip }, async () => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.fixed.token['#Word'] = spec.options.fixed.token['#IF']
     delete spec.options.fixed.token['#IF']
     alt(spec).s = '#Word'
@@ -293,15 +349,15 @@ test('the render refuses a lifted rule whose name another rule holds', { skip },
 // A dispatch's lookahead copies of one alternative consume and push the
 // same and differ in what they look ahead at; alternates alike in every
 // token are as many alternatives.
-test('the render keeps alternatives that are alike', { skip }, () => {
-  writes('A ::= "a" | "a"\n', 'A ::= "a" | "a"\n')
+test('the render keeps alternatives that are alike', { skip }, async () => {
+  await writes('A ::= "a" | "a"\n', 'A ::= "a" | "a"\n')
 })
 
 // A spec without `meta.provenance` is read by the names the compiler gives
 // its helpers, `_gen<n>_<kind>`, each with the shape the compiler gives
 // its kind: a rule the author named `_general`, or named as a helper and
 // shaped otherwise, is the author's.
-test('the render reads the compiler\'s helpers by name and shape where the spec names no provenance', { skip }, () => {
+test('the render reads the compiler\'s helpers by name and shape where the spec names no provenance', { skip }, async () => {
   const noProvenance = (spec) => {
     delete spec.meta
     return spec
@@ -313,7 +369,7 @@ test('the render reads the compiler\'s helpers by name and shape where the spec 
     'Start ::= Word _gen9_opt_x\n_gen9_opt_x ::= "x" "y"\nWord ::= [a-z]+\n',
     'Start ::= Word _gen9_plus_x\n_gen9_plus_x ::= "x" "y"\nWord ::= [a-z]+\n',
   ]) {
-    writes(src, src, noProvenance)
+    await writes(src, src, noProvenance)
   }
 })
 
@@ -322,15 +378,15 @@ test('the render reads the compiler\'s helpers by name and shape where the spec 
 // spec that starts at another rule, or at a wrapper without its close,
 // would come back accepting what it refuses, so it is refused, with its
 // provenance or without.
-test('the render refuses a start that is not the wrapper every grammar text compiles to', { skip }, () => {
+test('the render refuses a start that is not the wrapper every grammar text compiles to', { skip }, async () => {
   for (const provenance of [true, false]) {
-    refuses(KEYWORD, (spec) => {
+    await refuses(KEYWORD, (spec) => {
       spec.rule.__start__.close = []
       if (!provenance) delete spec.meta
       return spec
     }, /the start rule __start__ is not the start wrapper every grammar text compiles to/)
   }
-  refuses(KEYWORD, (spec) => {
+  await refuses(KEYWORD, (spec) => {
     spec.options.rule.start = 'Start'
     return spec
   }, /the start rule Start is not the start wrapper every grammar text compiles to/)
@@ -342,15 +398,15 @@ test('the render refuses a start that is not the wrapper every grammar text comp
 // after it: GBNF's json.gbnf class `["\\bfnrt]` had been written
 // `["#x5Cbfnrt]`, which reads back as U+5CBF and `nrt`. A code point
 // outside a class stands apart from the terminal after it.
-test('the render writes a class member after a code point so that it does not run on into it', { skip }, () => {
+test('the render writes a class member after a code point so that it does not run on into it', { skip }, async () => {
   // json.gbnf's class: the quote, the backslash, then b and f, n, r and t
-  writes('A ::= ["#x5C#x62#x66nrt]\n', 'A ::= ["#x5C#x62#x66nrt]\n')
+  await writes('A ::= ["#x5C#x62#x66nrt]\n', 'A ::= ["#x5C#x62#x66nrt]\n')
   // a range's end, then hexadecimal letters
-  writes('A ::= [#x0-#x1F#x61#x62]\n', 'A ::= [#x0-#x1F#x61#x62]\n')
-  writes('A ::= [#xE9-#xFF#x61g]\n', 'A ::= [#xE9-#xFF#x61g]\n')
+  await writes('A ::= [#x0-#x1F#x61#x62]\n', 'A ::= [#x0-#x1F#x61#x62]\n')
+  await writes('A ::= [#xE9-#xFF#x61g]\n', 'A ::= [#xE9-#xFF#x61g]\n')
   // a range's start after a code point
-  writes('A ::= [#x5C#x61-z]\n', 'A ::= [#x5C#x61-z]\n')
+  await writes('A ::= [#x5C#x61-z]\n', 'A ::= [#x5C#x61-z]\n')
   // a literal's code point and the string after it, a terminal apart
-  writes('A ::= #x1F "ab"\n', 'A ::= #x1F "ab"\n')
-  writes('A ::= #x5C "bf"\n', 'A ::= "\\" "bf"\n')
+  await writes('A ::= #x1F "ab"\n', 'A ::= #x1F "ab"\n')
+  await writes('A ::= #x5C "bf"\n', 'A ::= "\\" "bf"\n')
 })
