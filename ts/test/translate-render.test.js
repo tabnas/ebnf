@@ -34,6 +34,11 @@ const skip = ALCHEMY ? false : 'TABNAS_ALCHEMY does not name the alchemy command
 const BEAT_MS = 25000
 const LIMIT_MS = 120000
 
+// The most a run may write to either stream: 1 MiB, the default maxBuffer
+// spawnSync had. A command that floods its output fails its case rather
+// than filling the runner's heap.
+const MAX_OUTPUT = 1024 * 1024
+
 const compileText = (src) =>
   compileSpec(ebnfConvert(src, { builtins: true }), { recognition: false, strict: true })
 const compile = (src) => JSON.parse(compileText(src))
@@ -77,19 +82,34 @@ function render (what, spec) {
   current = now
   const run = spawn(ALCHEMY, ['run', Path.join(dir, 'render.alc'), input],
     { stdio: ['ignore', 'pipe', 'pipe'] })
-  let stdout = ''
-  let stderr = ''
-  run.stdout.setEncoding('utf8').on('data', (d) => { stdout += d })
-  run.stderr.setEncoding('utf8').on('data', (d) => { stderr += d })
-  // At the limit the command is killed and its output closed, as
-  // spawnSync's timeout closed it: a command that started others would
-  // leave them holding the output open past the limit.
-  let stopped = false
-  const stop = setTimeout(() => {
-    stopped = true
+  // A run is stopped by killing the command and closing its output, as
+  // spawnSync stopped one at its timeout and its maxBuffer: a command that
+  // started others would leave them holding the output open.
+  const kill = () => {
     run.kill('SIGKILL')
     run.stdout.destroy()
     run.stderr.destroy()
+  }
+  let flooded = false
+  const collect = (stream) => {
+    const chunks = []
+    let bytes = 0
+    stream.on('data', (d) => {
+      chunks.push(d)
+      bytes += d.length
+      if (MAX_OUTPUT < bytes && !flooded) {
+        flooded = true
+        kill()
+      }
+    })
+    return () => Buffer.concat(chunks).toString('utf8')
+  }
+  const stdout = collect(run.stdout)
+  const stderr = collect(run.stderr)
+  let stopped = false
+  const stop = setTimeout(() => {
+    stopped = true
+    kill()
   }, LIMIT_MS)
   return new Promise((resolve) => {
     const done = (out) => {
@@ -99,14 +119,18 @@ function render (what, spec) {
     }
     run.on('error', (e) => done({ code: 'NOT_RUN', message: String(e) }))
     run.on('close', (status, signal) => {
-      if (0 === status) return done({ text: stdout })
+      if (flooded) {
+        return done({ code: 'OUTPUT_LIMIT',
+          message: `${what}: wrote more than ${MAX_OUTPUT / (1024 * 1024)} MiB` })
+      }
+      if (0 === status) return done({ text: stdout() })
       if (stopped) {
         return done({ code: 'STOPPED', message: `${what}: stopped after ${LIMIT_MS / 1000}s` })
       }
       try {
-        done(JSON.parse(stderr))
+        done(JSON.parse(stderr()))
       } catch (e) {
-        done({ code: 'NOT_JSON', message: `${stderr} ${signal ?? ''}` })
+        done({ code: 'NOT_JSON', message: `${stderr()} ${signal ?? ''}` })
       }
     })
   })
