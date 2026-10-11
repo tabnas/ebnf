@@ -335,3 +335,22 @@ test('the render refuses a start that is not the wrapper every grammar text comp
     return spec
   }, /the start rule Start is not the start wrapper every grammar text compiles to/)
 })
+
+// W3C EBNF reads a code point's hexadecimal digits for as long as they
+// go, so a class member written right after a code point that would
+// begin with one is written as a code point too, and so is the member
+// after it: GBNF's json.gbnf class `["\\bfnrt]` had been written
+// `["#x5Cbfnrt]`, which reads back as U+5CBF and `nrt`. A code point
+// outside a class stands apart from the terminal after it.
+test('the render writes a class member after a code point so that it does not run on into it', { skip }, () => {
+  // json.gbnf's class: the quote, the backslash, then b and f, n, r and t
+  writes('A ::= ["#x5C#x62#x66nrt]\n', 'A ::= ["#x5C#x62#x66nrt]\n')
+  // a range's end, then hexadecimal letters
+  writes('A ::= [#x0-#x1F#x61#x62]\n', 'A ::= [#x0-#x1F#x61#x62]\n')
+  writes('A ::= [#xE9-#xFF#x61g]\n', 'A ::= [#xE9-#xFF#x61g]\n')
+  // a range's start after a code point
+  writes('A ::= [#x5C#x61-z]\n', 'A ::= [#x5C#x61-z]\n')
+  // a literal's code point and the string after it, a terminal apart
+  writes('A ::= #x1F "ab"\n', 'A ::= #x1F "ab"\n')
+  writes('A ::= #x5C "bf"\n', 'A ::= "\\" "bf"\n')
+})

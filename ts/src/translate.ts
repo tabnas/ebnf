@@ -55,7 +55,7 @@ const TRANSLATION: TranslationParts = Object.freeze({
       "Where the compiler reordered a rule's alternatives to tell them apart (a longer lookahead ahead of a shorter one that begins with the same character, a keyword ahead of a character class that can take it), the alternatives that push a helper of the compiler's are put back in the order its numbers record, and the others are written in the compiled order: the rule compiles back the same, and the spec compiled back can differ in the order of the alternates other rules build through it, in the numbers of the compiler's helpers and in the order of its tokens.",
       "A left recursion that ran through another rule (A ::= B, B ::= A \\"+\\" | NR) is written as the compiler rewrote it, with the leading reference that closed the cycle left in place, and compiles back to another spec, since the compiler now substitutes that reference.",
       "The start rule is written first, as this dialect starts from its first rule; a spec whose start rule was not its first rule compiles back with that rule moved first.",
-      "Terminals are written in W3C EBNF's forms: a literal as a string in double quotes, or in single quotes where it holds a double quote, and a code point term (#xB7) as the string it matches; a class as a bracket expression whose members are printable ASCII characters or code points (#xC0); the engine's TX, NR, ST and VL by their names; and a rule the compiler made a token of (plus ::= \\"+\\", referenced as plus) as that rule, after the others.",
+      "Terminals are written in W3C EBNF's forms: a literal as a string in double quotes, or in single quotes where it holds a double quote, and a code point term (#xB7) as the string it matches; a class as a bracket expression whose members are printable ASCII characters or code points (#xC0), a member that would begin with a hexadecimal digit right after a code point written as a code point too, since W3C EBNF reads a code point's digits for as long as they go (#x5Cb is U+5CB); the engine's TX, NR, ST and VL by their names; and a rule the compiler made a token of (plus ::= \\"+\\", referenced as plus) as that rule, after the others.",
       "A rule the compiler made a token of, whose name is one the compiler could give its literal by itself (B ::= \\"b\\", or any name of capitals, digits and underscores where the literal holds a character past ASCII), cannot be told from that literal and is written as the literal: it compiles back with the token later in the token table, or under the name the literal gives it.",
       "Repetitions are written in W3C EBNF's postfix forms, A*, A+ and A?, stacked where a repetition is itself repeated (A+?).",
       "A spec compiled from another notation compiles back under this package's own settings (the group tag on every alternate; GBNF's exact lexing is not kept), written in forms that match exactly what it matches and compile back as those forms: a case-insensitive literal (ABNF's default) of one letter as the class of its two cases and one holding no letter as a string, a lone character a string cannot hold as its code point, a counted repetition as its copies and nested options, an empty alternative, which W3C EBNF has no syntax for, by making the other alternatives optional, the class GBNF's dot compiles to as the class of every code point, and an RFC 5234 core rule as a rule of its own.",
@@ -120,7 +120,10 @@ const TRANSLATION: TranslationParts = Object.freeze({
 ;   class as \`[...]\` (a token set the compiler laid over a contested
 ;   class read back from its name, once its tokens are found to be that
 ;   class), each member a printable ASCII character or a code point,
-;   \`#x<hex>\`; the engine's \`TX\`, \`NR\`, \`ST\` and \`VL\` by their names. A
+;   \`#x<hex>\`, and a member written right after a code point as a code
+;   point too where it would begin with a hexadecimal digit, which W3C
+;   EBNF would read as more of the code point before it (\`#x5Cb\` is
+;   U+5CB); the engine's \`TX\`, \`NR\`, \`ST\` and \`VL\` by their names. A
 ;   token named for a rule the compiler lifted to it (\`plus ::= "+"\`
 ;   becomes the token \`#plus\`) is written as that rule, after the
 ;   others, and referenced by name.
@@ -1779,9 +1782,54 @@ def ebnf-member [e]
 def ebnf-surrogate [h]
   ebnf-some (filter (fn [p] (ebnf-starts p h)) ["d8" "d9" "da" "db" "dc" "dd" "de" "df"])
 
+; A class's member as a code point whatever it is, \`#x<hex>\`.
+def ebnf-member-code [e]
+  let [u (ebnf-after "\\\\u" e)]
+    let [hex (ebnf-hex-lower (match (ebnf-starts "{" u) (case true (ebnf-before "}" (ebnf-after "{" u))) (case false u)))]
+      match (ebnf-less 4 (length hex))
+        case true (string-join "" ["#x" (ebnf-code-digits hex)])
+        case false (string-join "" ["#x" (ebnf-code-digits (string-join "" [(match (length hex) (case 1 "000") (case 2 "00") (case 3 "0") (case _ "")) hex]))])
+
+; A member of a class's pattern as W3C EBNF writes it, a range's start
+; with its dash: as \`ebnf-member\` writes it, or as a code point where
+; \`coded\` is true.
+def ebnf-member-written [m coded]
+  let [start (ebnf-ends "-" m)]
+    let [e (string-join "" ["\\\\u" (match start (case true (ebnf-before "-" m)) (case false m))])]
+      let [text (match coded (case true (ebnf-member-code e)) (case false (ebnf-member e)))]
+        match start
+          case true (string-join "" [text "-"])
+          case false text
+
+; A class's members one after another. W3C EBNF reads a code point's
+; hexadecimal digits for as long as they go (\`#x5Cb\` is U+5CB, \`#x1Fab\`
+; U+1FAB), so a member written right after a code point, a range's end
+; among them, that would begin with a hexadecimal digit is written as a
+; code point of its own, and the members after it the same way.
+def ebnf-members-text [self ms coded acc]
+  match (count ms)
+    case 0 acc
+    case _
+      let [m (ebnf-at ms 0)]
+        let [plain (ebnf-member-written m false)]
+          let [text (match (match coded (case true (ebnf-hex-first plain)) (case false false)) (case true (ebnf-member-written m true)) (case false plain))]
+            self self (ebnf-rest ms) (ebnf-code-last text) (string-join "" [acc text])
+
+; Whether a member's text begins with a hexadecimal digit.
+def ebnf-hex-first [text]
+  ebnf-some (filter (fn [d] (ebnf-starts d text)) ["0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "a" "b" "c" "d" "e" "f" "A" "B" "C" "D" "E" "F"])
+
+; Whether a member's text ends with a code point's digits: a code point
+; that is not a range's start, whose dash ends it.
+def ebnf-code-last [text]
+  match (ebnf-starts "#x" text)
+    case false false
+    case true (ebnf-not (ebnf-ends "-" text))
+
 ; A class's pattern as W3C EBNF: its members and ranges, each member as
-; \`ebnf-member\` writes it, and \`[\\s\\S]\`, which another notation's \`.\`
-; compiles to, as the class of every code point.
+; \`ebnf-member\` writes it, or as a code point where it would follow one
+; and begin with a hexadecimal digit, and \`[\\s\\S]\`, which another
+; notation's \`.\` compiles to, as the class of every code point.
 def ebnf-class-text [pat]
   match pat
     case "[\\\\s\\\\S]" "[#x0-#x10FFFF]"
@@ -1795,7 +1843,7 @@ def ebnf-class-text [pat]
                 match negated
                   case true "^"
                   case false ""
-                string-join "" (map (fn [m] (match (ebnf-ends "-" m) (case true (string-join "" [(ebnf-member (string-join "" ["\\\\u" (ebnf-before "-" m)])) "-"])) (case false (ebnf-member (string-join "" ["\\\\u" m]))))) members)
+                ebnf-members-text ebnf-members-text members false ""
                 "]"
 
 ; ---- EBNF's elements

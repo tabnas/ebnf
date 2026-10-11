@@ -294,7 +294,11 @@ one terminal: this front end reads whitespace between terminals, so a
 literal that would take several (a case-insensitive literal holding a
 letter beside another character, a literal holding a control character
 or both quotes beside other characters) would match itself with
-whitespace inside, and is refused.
+whitespace inside, and is refused. In a class, a member written right
+after a code point is written as a code point too where it would begin
+with a hexadecimal digit: W3C EBNF reads a code point's digits for as
+long as they go, so `["#x5Cbfnrt]`, GBNF's `["\\bfnrt]`, would read
+back as U+5CBF and `nrt`.
 
 The manifest's `loss` list says, a sentence each, what a written grammar
 does not keep, and what the render refuses with
