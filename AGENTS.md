@@ -294,7 +294,31 @@ one terminal: this front end reads whitespace between terminals, so a
 literal that would take several (a case-insensitive literal holding a
 letter beside another character, a literal holding a control character
 or both quotes beside other characters) would match itself with
-whitespace inside, and is refused. In a class, a member written right
+whitespace inside, and is refused.
+
+No text is written nested deeper than this front end reads back. Its
+reader refuses a rule whose elements nest more than 128 levels deep, an
+element of an alternative being at level 1 and each group and postfix
+operator around one a level more: the shared compiler's
+`MAX_ELEMENT_DEPTH`, which the Rust reader the hosts run inherits (the
+Rust front end's own caps, 130 levels and 129 nested groups, lie past
+it; the TypeScript reader has no fixed cap, its stack running out some
+hundreds of levels further, and the Go reader none). The render's
+`ebnf-max-depth` is that number, and `rs/tests/translate_test.rs` holds
+it to `MAX_ELEMENT_DEPTH` and reads back the text the render writes at
+it. A counted repetition's nested options take an option and a group for
+each copy past its least count, so the render refuses one whose
+innermost copy would pass the limit, naming the repetition and the
+level, before it writes the text: at a rule's top level ABNF's
+`*64"a"` is written, its last `"a"` at level 128, and `*65"a"` is
+refused (it once wrote `*200"a"` as 200 nested options, a text its
+reader refuses). Any other element the text would put past the limit
+refuses its rule, naming the level. The render's own evaluation is
+capped by alchemy's `MAX_EVAL_DEPTH`, which a spec of nested groups
+reaches long before the limit: measured with `top ::= ( ( "x" "y" ) )`
+nested, 55 groups are written and 56 fail with STREAMABILITY_UNKNOWN,
+writing nothing. A counted repetition's options are built without that
+recursion, which is why they could pass the limit. In a class, a member written right
 after a code point is written as a code point too where it would begin
 with a hexadecimal digit: W3C EBNF reads a code point's digits for as
 long as they go, so `["#x5Cbfnrt]`, GBNF's `["\\bfnrt]`, would read
@@ -315,7 +339,8 @@ gives, a rule with no alternate to open with, a sequence's step with more
 alternates than a step, a rule the compiler lifted to a token whose name
 another rule holds,
 a start that is not the start wrapper every grammar text compiles
-to, a name EBNF cannot spell, and Go's `tokenOrder`. The
+to, a name EBNF cannot spell, text nested deeper than this front end
+reads back (128 levels), and Go's `tokenOrder`. The
 tree builders every compiled grammar carries, and its marks, are not
 written, as the plan's declared subset says (an action or a mark is not
 written): the compiler makes them again from the rules, and a loss
