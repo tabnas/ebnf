@@ -149,8 +149,8 @@ const NAME_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/
 //   ebnf ::= prod*
 //   prod ::= NAME ('::=' | '=') alts ';'?
 //   alts ::= seq ('|' seq)*
-//   seq  ::= (','? elem)*
-//   elem ::= atom post
+//   seq  ::= (','? item)*
+//   item ::= atom post
 //   post ::= ('?' | '*' | '+')*
 //   atom ::= NAME | STRING | CHARCLASS | HEX | '(' alts ')'
 const ebnfRules: Record<
@@ -250,7 +250,12 @@ const ebnfRules: Record<
   // The `c:` guard is what makes the two-child sequence work: a close
   // state is re-entered every time a child returns, so without it the
   // `post` push would repeat forever.
-  elem: {
+  //
+  // The rule is `item`, the name the Rust and Go tables give it too:
+  // `@elem-bc` is one of the engine's own builtin references in Rust,
+  // which would win over a rule named `elem`, and one name in every
+  // runtime is what lets a transducer part read the rule passes alike.
+  item: {
     open: [{ p: 'atom' }],
     close: [
       {
@@ -394,18 +399,18 @@ function seqAlts(first = false): any[] {
       // ISO 14977 writes concatenation explicitly. Consume the comma
       // and carry on: in this dialect juxtaposition already means
       // sequence, so the separator adds nothing but is harmless here.
-      { s: '#CA', p: 'elem' },
+      { s: '#CA', p: 'item' },
     ]
 
   return [
     ...lead,
 
     // Element starters.
-    { s: '#ST', b: 1, p: 'elem' },
-    { s: '#CC', b: 1, p: 'elem' },
-    { s: '#HX', b: 1, p: 'elem' },
-    { s: '#TX', b: 1, p: 'elem' },
-    { s: '#LP', b: 1, p: 'elem' },
+    { s: '#ST', b: 1, p: 'item' },
+    { s: '#CC', b: 1, p: 'item' },
+    { s: '#HX', b: 1, p: 'item' },
+    { s: '#TX', b: 1, p: 'item' },
+    { s: '#LP', b: 1, p: 'item' },
 
     // Named rejections, checked before the catch-all so the diagnostic
     // names the construct instead of "unexpected token".
@@ -822,7 +827,18 @@ function getEbnfParser(): (src: string) => EbnfProduction[] {
 
   // EBNF defines its own grammar from scratch, so no grammar plugin is
   // loaded — just the bare engine with the token set retuned below.
-  const j = new Tabnas({
+  const j = new Tabnas(ebnfOptions())
+  installEbnfRules(j, ebnfRules)
+
+  _ebnfParser = (src: string) => j.parse(src) as EbnfProduction[]
+  return _ebnfParser
+}
+
+
+// The engine options the EBNF meta-grammar reads its source with. The IR
+// parser above and the tree parser (`tree.ts`) share them.
+function ebnfOptions(): any {
+  return {
     rule: { start: 'ebnf' },
     fixed: {
       token: {
@@ -927,17 +943,21 @@ function getEbnfParser(): (src: string) => EbnfProduction[] {
         },
       },
     },
-  })
+  }
+}
 
-  // Drop the default JSON rules — they would otherwise compete with
-  // ours for the starting token set.
+
+// Install a rule table of the EBNF meta-grammar's shape on `j`, in place
+// of the default JSON rules, which would otherwise compete with it for
+// the starting token set.
+function installEbnfRules(j: any, table: typeof ebnfRules): void {
   const existing = j.rule()
   for (const name of Object.keys(existing)) {
     j.rule(name, null)
   }
 
-  for (const name of Object.keys(ebnfRules)) {
-    const spec = ebnfRules[name]
+  for (const name of Object.keys(table)) {
+    const spec = table[name]
     j.rule(name, (rs: any) => {
       if (spec.bo) rs.bo(spec.bo)
       if (spec.bc) rs.bc(spec.bc)
@@ -945,9 +965,6 @@ function getEbnfParser(): (src: string) => EbnfProduction[] {
       if (spec.close) rs.close(spec.close)
     })
   }
-
-  _ebnfParser = (src: string) => j.parse(src) as EbnfProduction[]
-  return _ebnfParser
 }
 
 
@@ -1144,6 +1161,9 @@ export {
   emitGrammarSpec,
   eliminateLeftRecursion,
   ebnfRules,
+  ebnfOptions,
+  installEbnfRules,
+  NAME_RE,
   EbnfParseError,
   EbnfCompileError,
 }

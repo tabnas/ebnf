@@ -359,14 +359,14 @@ pub fn ebnf_rules() -> JsonValue {
 /// cell would overwrite what the parent is accumulating. This is the
 /// Rust spelling of TypeScript's `r.node = …`, which rebinds the
 /// property and leaves the parent's own reference alone.
-fn set_node(rule: &mut Rule, value: Value) {
+pub(crate) fn set_node(rule: &mut Rule, value: Value) {
     rule.node = Rc::new(RefCell::new(value));
 }
 
 /// Append to the array a rule's node holds, through the shared cell, so
 /// a parent accumulating into the same array sees it. The TypeScript
 /// `r.node.push(…)` on an inherited array.
-fn push_node(rule: &Rule, value: Value) {
+pub(crate) fn push_node(rule: &Rule, value: Value) {
     if let Some(list) = rule.node.borrow_mut().as_array_mut() {
         list.push(value);
     }
@@ -429,7 +429,7 @@ fn wrap_one_deeper(context: &mut Context) -> Result<(), ActionError> {
 
 /// The token a matched open slot holds, cloned so the rule stays
 /// borrowable.
-fn open_token(rule: &Rule, index: usize) -> Option<Token> {
+pub(crate) fn open_token(rule: &Rule, index: usize) -> Option<Token> {
     rule.o.get(index).cloned()
 }
 
@@ -443,7 +443,7 @@ fn close_token(rule: &Rule) -> Option<Token> {
 /// A matched token's value as a string, resolving a lazy value function
 /// the way the canonical `.val` getter does, and falling back to the
 /// matched source.
-fn token_string(token: &Token, rule: &mut Rule, context: &mut Context) -> String {
+pub(crate) fn token_string(token: &Token, rule: &mut Rule, context: &mut Context) -> String {
     let token = token.clone();
     match token.resolve_val(rule, context) {
         Value::String(text) => text,
@@ -493,7 +493,7 @@ fn loc_of(token: Option<&Token>) -> Loc {
 /// `/^[A-Za-z_][A-Za-z0-9_.-]*$/`, written out rather than compiled: the
 /// `regex` crate's `$` and JavaScript's agree here, but a character
 /// predicate cannot be wrong about it at all.
-fn valid_name(name: &str) -> bool {
+pub(crate) fn valid_name(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
         return false;
@@ -1106,7 +1106,29 @@ fn iso_comment(rest: &str) -> Option<MatchTokenResult> {
 /// Build the EBNF parser instance: a bare engine carrying only the
 /// meta-grammar above.
 fn build_ebnf_parser() -> Result<Tabnas, String> {
+    build_parser(register_refs, &[])
+}
+
+/// Build a parser that reads EBNF with the meta-grammar above, its actions
+/// the ones `register` binds to the names the grammar document gives
+/// them, and `errors` (each a code, its message and its hint) added to the
+/// engine's catalogue. The IR parser and the tree parser (`tree.rs`) share
+/// everything else, so their rule passes are alike.
+pub(crate) fn build_parser(
+    register: fn(&mut Tabnas),
+    errors: &[(&str, &str, &str)],
+) -> Result<Tabnas, String> {
     let mut parser = Tabnas::with_options(ebnf_parser_options());
+    for (code, message, hint) in errors {
+        parser
+            .options
+            .error
+            .insert((*code).to_string(), (*message).to_string());
+        parser
+            .options
+            .hint
+            .insert((*code).to_string(), (*hint).to_string());
+    }
 
     // Fixed tokens the notation adds. `#OS` `#CS` `#OB` `#CB` `#CA` are
     // already the engine's, spelled the same way.
@@ -1184,7 +1206,7 @@ fn build_ebnf_parser() -> Result<Tabnas, String> {
         parser.remove_rule(&name);
     }
 
-    register_refs(&mut parser);
+    register(&mut parser);
     parser
         .grammar_json(GRAMMAR_TEXT)
         .map_err(|error| error.to_string())?;

@@ -228,6 +228,37 @@ path from sibling checkouts instead, and the tests take `tabnas-support`
 the same way. The release workflow swaps those paths for crates.io
 versions, and drops the test-only one, when it publishes this crate.
 
+## The tree for translation
+
+A host that translates a grammar between notations reads it as the
+schema `grammar-rules`, which `tabnas-bnf` defines and the front-ends of
+the grammar notations share: the rules as the text writes them, in
+source order, before any compiler has seen them. `parse_ebnf_tree` reads
+it whole, and `make` builds the parser that yields it, which a host
+streams through the transducer part `translate()` carries as
+`transduce`, beside the render that writes the tree back as W3C EBNF.
+
+```rust
+use tabnas_ebnf::parse_ebnf_tree;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let tree = parse_ebnf_tree("Num ::= [0-9]+ | \"x\"? #x41")?.to_json();
+    let rule = &tree["rules"][0];
+    assert_eq!(rule["name"], "Num");
+    assert_eq!(rule["alternatives"][0][0]["type"], "class");
+    assert_eq!(rule["alternatives"][1][0]["repeat"][0]["max"], 1.0);
+    assert_eq!(rule["alternatives"][1][1]["value"], 65.0);
+    Ok(())
+}
+```
+
+The tree parser refuses a source the tree has no room for, or the
+dialect refuses, with a code, which the `code` of `EbnfParseError`
+carries: a name outside W3C EBNF's spelling, `ebnf_name`, an empty string,
+a code point past `#x10FFFF`, a class range that ends below where it
+starts, an empty class, and the named rejections of the dialect, each
+under a code of its own.
+
 ## Differences from the canonical TypeScript
 
 The IR this front-end builds is held to the TypeScript front-end's own
@@ -271,10 +302,10 @@ the dialect:
   as deep. That is one level more than the shared compiler's own limit
   on element nesting, so the compiler's better diagnostic is still the
   one a grammar meets first.
-- **One rule of the meta-grammar is named differently.** `ebnf_rules()`
-  calls the element rule `item` where the canonical table calls it
-  `elem`, because `@elem-bc` is one of the engine's own builtin action
-  references. Nothing about the IR changes.
+- **The element rule is `item`.** `@elem-bc` is one of the engine's own
+  builtin action references, so `ebnf_rules()` calls the element rule
+  `item`, and the canonical table now does too, so that the transducer
+  part reads the rule passes alike in every runtime.
 
 Each difference is measured and recorded in
 [`../DIVERGENCE.md`](../DIVERGENCE.md), and pinned by
