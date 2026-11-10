@@ -11,6 +11,7 @@ const {
   ebnf, ebnfConvert, toSpec, parseEbnf,
   emitGrammarSpec, eliminateLeftRecursion, ebnfRules,
   EbnfParseError, EbnfCompileError, VERSION,
+  make, parseEbnfTree, ebnfTreeRules, translate,
 } = require('@tabnas/ebnf')
 ```
 
@@ -87,6 +88,68 @@ const { ebnfConvert } = require('@tabnas/ebnf')
 const spec = ebnfConvert('A ::= "x"\nB ::= "y"', { start: 'B' })
 spec.rule.__start__.open[0].p // => 'B'
 ```
+
+## The tree for translation
+
+A host that translates a grammar between notations reads an EBNF
+document as the schema `grammar-rules`, which `@tabnas/bnf` defines and
+the other grammar notations share: the grammar's rules as the text
+writes them, in source order, each `{ type: 'rule', name, alternatives
+}`, an alternative a list of elements, and an element an object whose
+`type` comes first and whose repetitions, `repeat`, come last.
+
+### `parseEbnfTree(src) => EbnfTree`
+
+Read EBNF source whole as the tree, each element as its type:
+
+- a name, a `reference`,
+- a string, a `literal` that matches exactly, its text its characters,
+- `#xNN`, a `char`, its `value` the code point,
+- a class, a `class` of code points, `{ from, to }` each,
+- `( … )`, a `group`,
+- a run of postfix operators, the element's `repeat`, the innermost
+  first.
+
+The tree keeps no comment and none of the spellings `=`, `,` and `;`
+that this package also reads, holds a second definition of a name as a
+rule of its own, and names no `start`,
+since EBNF starts from its first rule. For source the meta-grammar
+refuses, or that the tree has no room for, it throws `EbnfParseError`,
+whose `cause` is the engine's error with one of the codes `ebnf_name`,
+`ebnf_empty_literal`, `ebnf_code_point`, `ebnf_class_range`,
+`ebnf_empty_class`, `ebnf_char_class`, `ebnf_empty_alternative`,
+`ebnf_leading_comma`, `ebnf_subtraction`, `ebnf_special_sequence`,
+`ebnf_iso_repetition`, `ebnf_dangling_postfix` and `ebnf_unclosed`, or
+the engine's own.
+
+```js
+const { parseEbnfTree } = require('@tabnas/ebnf')
+
+const tree = parseEbnfTree('Num ::= [0-9]+ | #x41')
+tree.rules[0].alternatives[0][0].repeat // => [{ min: 1 }]
+tree.rules[0].alternatives[1][0] // => { type: 'char', value: 65 }
+```
+
+### `make() => Tabnas`
+
+A fresh parser whose value is the tree: the parser a host streams a
+document through with the transducer part, `translate().transduce`,
+which makes the tree's events from its rule passes.
+
+### `ebnfTreeRules`
+
+The meta-grammar's rule table with the tree's actions: the alternates of
+`ebnfRules`, each action replaced.
+
+### `translate() => TranslationParts`
+
+The translation parts the manifest names, each `{ entry, source }`, and
+the manifest's text:
+
+- `transduce`, entry `ebnf-transduce`, the transducer part.
+- `render`, entry `ebnf-render`, which writes a tree as W3C EBNF.
+- `spec`, entry `ebnf-render-spec`, which writes a compiled grammar spec
+  as W3C EBNF.
 
 ## Plugin form
 

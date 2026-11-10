@@ -35,9 +35,11 @@ if ('string' !== typeof languageId || '' === languageId) {
 
 // One part the manifest names: an alchemy file, embedded with its entry
 // point `<languageId>-<part>`, or a render alchemy carries (`json`,
-// `csv`), named and not embedded.
-function part (kind) {
-  const value = spec[kind]
+// `csv`), named and not embedded. `object` is the manifest's `translate`,
+// or its `spec`, the route of the compiled grammar spec, whose render's
+// entry point is `<languageId>-render-spec`.
+function part (object, kind, entry) {
+  const value = object[kind]
   if (null == value) return undefined
   if ('string' !== typeof value || '' === value) {
     throw new Error(`translate.${kind} is not a non-empty string`)
@@ -49,12 +51,16 @@ function part (kind) {
 
   const sourcePath = path.join(root, value)
   const source = fs.readFileSync(sourcePath, 'utf8')
-  return { entry: `${languageId}-${kind}`, source, file: path.basename(value) }
+  return { entry: entry ?? `${languageId}-${kind}`, source, file: path.basename(value) }
 }
 
-const lift = part('lift')
-const embed = part('embed')
-const render = part('render')
+const lift = part(spec, 'lift')
+const embed = part(spec, 'embed')
+const render = part(spec, 'render')
+const transduce = part(spec, 'transduce')
+const specRender = null == spec.spec
+  ? undefined
+  : part(spec.spec, 'render', `${languageId}-render-spec`)
 
 function tsPart (value) {
   if (null == value) return undefined
@@ -76,6 +82,8 @@ const fields = [`manifest: ${tsString(manifestText)}`]
 if (lift) fields.push(`lift: ${tsPart(lift)}`)
 if (embed) fields.push(`embed: ${tsPart(embed)}`)
 if (render) fields.push(`render: ${tsPart(render)}`)
+if (transduce) fields.push(`transduce: ${tsPart(transduce)}`)
+if (specRender) fields.push(`spec: ${tsPart(specRender)}`)
 
 const generated = `/* Copyright (c) 2026 Richard Rodger and other contributors, MIT License */
 
@@ -92,6 +100,8 @@ type TranslationParts = Readonly<{
   lift?: TranslationPart
   embed?: TranslationPart
   render?: TranslationPart
+  transduce?: TranslationPart
+  spec?: TranslationPart
 }>
 
 const TRANSLATION: TranslationParts = Object.freeze({
@@ -118,7 +128,7 @@ for (const runtime of ['go', 'rs']) {
   const target = path.join(root, runtime, 'translate')
   fs.mkdirSync(target, { recursive: true })
   fs.writeFileSync(path.join(target, 'manifest.json'), manifestText)
-  for (const value of [lift, embed, render]) {
+  for (const value of [lift, embed, render, transduce, specRender]) {
     if (value?.source) fs.writeFileSync(path.join(target, value.file), value.source)
   }
 }

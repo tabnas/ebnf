@@ -29,7 +29,7 @@ import (
 
 ## Public API
 
-Four functions, one pass, one constant, and the type aliases.
+Four functions, one pass, one constant, and the type aliases. Three more serve a host that translates: the tree's reader, its parser, and the translation parts.
 
 ### `func Install(j *tabnas.Tabnas, src string, opts *ConvertOptions) (*tabnas.GrammarSpec, error)`
 
@@ -66,6 +66,36 @@ test that pins the rewrite. Returns a new grammar.
 
 This module's version. It must equal `ts/package.json` `"version"`; a
 drift test in each runtime enforces it.
+
+### `func ParseEbnfTree(src string) (*tabnas.OrderedMap, error)`
+
+Reads a document whole as the tree a host translates: the schema
+grammar-rules, which tabnas/bnf defines and the other grammar notations
+share, the rules as the text writes them in source order, each member in
+the order the schema gives it. A source the meta-grammar refuses, or the
+tree has no room for, fails with a `*ParseError` whose `Cause` is the
+engine's error with its code: one of the tree's codes, which the
+section on error codes of `../../AGENTS.md` lists, or the engine's own.
+
+### `func Make() *tabnas.Tabnas`
+
+A fresh parser whose value is that tree: the parser a host streams a
+document through with the transducer part, whose rule passes the part
+reads. The parser is a tabnas rule table, the canonical meta-grammar as
+the Rust crate's grammar document, where `ParseEbnf` is a hand-written
+scanner.
+
+### `func Translate() *TranslationParts`
+
+The translation parts the manifest names, each an `Entry` and its
+`Source`, and the manifest's text:
+
+- `Transduce`, entry `ebnf-transduce`, the transducer part.
+- `Render`, entry `ebnf-render`, which writes a tree as W3C EBNF.
+- `Spec`, entry `ebnf-render-spec`, which writes a compiled grammar spec
+  as W3C EBNF.
+
+Each call returns a copy of its own.
 
 ## Options
 

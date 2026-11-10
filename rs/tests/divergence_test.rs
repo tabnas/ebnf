@@ -463,14 +463,12 @@ fn aligned_a_syntax_error_reports_the_same_column() {
     assert_eq!(error.column, Some(5), "{}", error.message);
 }
 
-/// The meta-grammar's rule table names one rule differently from the
-/// canonical one, and nothing else about the IR changes.
+/// The meta-grammar's element rule is `item`, as the canonical table's
+/// now is, and nothing else about the IR changes.
 ///
 /// `@elem-bc` is one of the ENGINE's own builtin action references, and
 /// a builtin wins the name lookup, so a rule named `elem` would silently
 /// run the engine's list-element push instead of this crate's closure.
-/// The canonical front-end hands the engine closures rather than named
-/// references, so the collision cannot arise there.
 #[test]
 fn the_rule_table_calls_the_element_rule_item() {
     let rules = tabnas_ebnf::ebnf_rules();

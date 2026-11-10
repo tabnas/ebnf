@@ -17,12 +17,13 @@ set aside, and why.
 
 ## Where the divergences are pinned
 
-There is no executable register in `test/spec` for these, because this
-repository has no `test/spec` directory and no repo-root `test/` at all:
-it declares no error codes, and what pins its behaviour is in-language,
-message by message (`AGENTS.md`, "Error codes"). Two of the five below
-are invisible to any grammar-to-output fixture, and one is about the
-shape of the API rather than about a value.
+There is no executable register in `test/spec` for these: the one
+fixture there, `tree.tsv`, holds the tree a host translates, which the
+three runtimes read alike, and the IR this package compiles declares no
+error codes, so what pins it is in-language, message by message
+(`AGENTS.md`, "Error codes"). Two of the five below are invisible to any
+grammar-to-output fixture, and one is about the shape of the API rather
+than about a value.
 
 So each is pinned by a Rust test in `rs/tests/divergence_test.rs`,
 asserted in BOTH directions: the behaviour recorded here, and the
@@ -187,6 +188,14 @@ The nesting cap admits 130 levels, one more than the shared compiler's
 own limit, so a grammar that nests 128 deep still meets the compiler's
 diagnostic, which names the rule and the limit.
 
+The tree a host translates keeps the group cap in Rust: `parse_ebnf_tree`
+refuses 130 nested groups with `ebnf_group_depth`, where TypeScript and
+Go read them, since the tree nests once per group and its drop recurses
+(`nesting_past_the_group_cap_is_refused` in `rs/tests/tree_test.rs`). A
+run of postfix operators is a list in the tree, `repeat`, so the nesting
+cap has nothing to count there, and the shared compiler's limit does not
+apply to a tree that is never compiled.
+
 **Owner.** `tabnas-bnf` owns the 128 limit and records it in its own
 `rs/README.md`. This crate owns the other two. None is reachable by
 EBNF an author writes: the deepest grammar in the XML, XPath and XQuery
@@ -205,14 +214,12 @@ dynamic instance properties, so the install path is the free function
 `ebnf(&mut parser, src, opts)` and the convert-only path is
 `ebnf_convert(src, opts)`, which is what `tn.ebnf.toSpec` does.
 
-One further surface difference, invisible to any value: `ebnf_rules()`
-names the element rule `item` where the canonical table names it `elem`.
-`@elem-bc` is one of the engine's own builtin action references and a
-builtin wins the name lookup, so a rule named `elem` would run the
-engine's list-element push instead of this crate's closure. The
-canonical front-end hands the engine closures rather than named
-references, so the collision cannot arise there, and the IR is
-identical either way.
+The element rule is `item` in every runtime's table now, the canonical
+one included: `@elem-bc` is one of the Rust engine's own builtin action
+references and a builtin wins the name lookup, so a rule named `elem`
+would run the engine's list-element push instead of this crate's
+closure, and one name in every runtime is what lets the transducer part,
+`alchemy/transduce.alc`, read the rule passes alike.
 
 **Reason.** Rust has no exceptions and no dynamic instance properties.
 

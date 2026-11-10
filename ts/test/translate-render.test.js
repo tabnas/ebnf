@@ -1,11 +1,13 @@
 /* Copyright (c) 2026 Richard Rodger and other contributors, MIT License */
 'use strict'
 
-// The render, run: a grammar spec written as W3C EBNF by the render the
-// package carries (`translate().render`), through the `alchemy` command
-// (tabnas/alchemy-cli), which this package does not depend on. Set
-// TABNAS_ALCHEMY to the command's path to run these tests; without it
-// they skip.
+// The render of the grammar-spec route, run: a grammar spec written as
+// W3C EBNF by the render the package carries for it (`translate().spec`,
+// alchemy/render-spec.alc), through the `dmog` command (tabnas/dmog),
+// which this package does not depend on. Set TABNAS_ALCHEMY to the
+// command's path to run these tests; without it they skip. The render of
+// the grammar-rules tree, the route a host translates by, is
+// `tree-render.test.js`'s.
 //
 // Each spec is one the compiler writes, changed where a test says, so
 // what the render reads is a tree a host can hand it. The render writes
@@ -65,7 +67,7 @@ function render (what, spec) {
   if (null == dir) {
     dir = Fs.mkdtempSync(Path.join(Os.tmpdir(), 'ebnf-render-'))
     Fs.writeFileSync(Path.join(dir, 'render.alc'),
-      translate().render.source + '\ndef export [input] (ebnf-render input)\n')
+      translate().spec.source + '\ndef export [input] (ebnf-render-spec input)\n')
   }
   if (null == beat) {
     beat = setInterval(() => {

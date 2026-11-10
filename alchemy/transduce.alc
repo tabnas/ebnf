@@ -1,0 +1,119 @@
+; EBNF's transducer part: the tree's JSON events from the rule passes of
+; the EBNF meta-grammar, for a host that reads parser events (dmog's
+; `translate` and `run --grammar ebnf`). Every event is the one the walk
+; of the tree `parseEbnfTree` builds gives: the schema `grammar-rules`
+; (tabnas/bnf's docs/grammar-rules.md, and section 13.1 of alchemy's
+; docs/streaming-plan.md), a grammar's rules as the text writes them, in
+; source order, each an object whose `type` comes first and whose other
+; members follow in the order the schema lists them. EBNF starts from its
+; first rule, so the grammar has no `start`. It is hand-written over the
+; passes of `make()`, the parser whose value that tree is.
+;
+; The passes. `ebnf` holds the grammar and `prod` a rule, a production
+; replacing the one before it; `prod` reads its name and its `::=` or
+; `=`, and `alts` its alternatives, each a `seq` of elements. An element
+; is an `item`: the `atom` it pushes, whose open reads what the element is
+; (a string, a class, a code point, a rule name, or the `(` of a group,
+; whose alternatives are an `alts` of their own, and whose close reads the
+; `)`), and then, from the item's first close, the `post` it pushes, a
+; chain of one `post` for each postfix operator, each reading the operator
+; and pushing the next. A token whose text needs reading carries what it
+; reads as its value, which the meta-grammar's action gives it: a class
+; its `negated` and `members`, a code point its number; a string's value
+; is its text and a name's its spelling, as the lexer reads them. A rule
+; whose close pushes another (`alts` on `|`, `seq` on its next element,
+; `item` on its postfix operators) is still open, so a close ends its rule
+; only where its alternate pushes nothing.
+;
+; The state is whether any pass came (a source that makes none, the empty
+; file, is the grammar of no rules at finish) and whether the element at
+; hand has begun its repetitions, which a postfix operator begins and the
+; element's end closes.
+
+; A postfix operator's repetition.
+def ebnf-transduce-repetition [name]
+  match name
+    case "#QM" [object-start (key "min") (scalar 0) (key "max") (scalar 1) object-end]
+    case "#STAR" [object-start (key "min") (scalar 0) object-end]
+    case "#PLUS" [object-start (key "min") (scalar 1) object-end]
+    case _ (fail :protocol-order "a postfix operator is ?, * or +")
+
+; A class's member's events.
+def ebnf-transduce-member [m]
+  vector object-start (key "from") (scalar (get :from m)) (key "to") (scalar (get :to m)) object-end
+
+; What an atom's open writes: an element up to its last member, or a
+; group up to the start of its alternatives.
+def ebnf-transduce-atom [rule]
+  let [token (transduce-token 0 rule)]
+    let [val (get :val token)]
+      match (get :name token)
+        case "#ST" [object-start (key "type") (scalar "literal") (key "text") (scalar val) (key "caseSensitive") (scalar true)]
+        case "#CC" (push-all (push array-end (flatten (map ebnf-transduce-member (as-vector (get :members val))))) [object-start (key "type") (scalar "class") (key "negated") (scalar (get :negated val)) (key "members") array-start])
+        case "#HX" [object-start (key "type") (scalar "char") (key "value") (scalar val)]
+        case "#TX" [object-start (key "type") (scalar "reference") (key "name") (scalar val)]
+        case "#LP" [object-start (key "type") (scalar "group") (key "alternatives") array-start]
+        case _ (fail :protocol-order "an atom opens on a string, a class, a code point, a name or (")
+
+; The rule a pass's alternate pushes, or "".
+def ebnf-transduce-pushes [rule]
+  match (get :alt rule)
+    case missing ""
+    case alt (get :p alt)
+
+def ebnf-transduce-open [rep rule]
+  match (get :name rule)
+    case "ebnf" [rep [object-start (key "type") (scalar "grammar") (key "rules") array-start]]
+    case "prod" [rep [object-start (key "type") (scalar "rule") (key "name") (scalar (get :val (transduce-token 0 rule))) (key "alternatives") array-start]]
+    case "alts" [rep []]
+    case "seq" [rep [array-start]]
+    case "item" [rep []]
+    case "atom" [rep (ebnf-transduce-atom rule)]
+    case "post"
+      match (count (get :tokens rule))
+        case 0 [rep []]
+        case _
+          let [one (ebnf-transduce-repetition (get :name (transduce-token 0 rule)))]
+            match rep
+              case true [true one]
+              case false [true (push-all one [(key "repeat") array-start])]
+    case _ (fail :protocol-order "a rule pass of a rule the EBNF meta-grammar does not have")
+
+def ebnf-transduce-close [rep rule]
+  match (get :name rule)
+    case "ebnf" [rep [array-end object-end]]
+    case "prod" [rep [object-end]]
+    case "alts"
+      match (ebnf-transduce-pushes rule)
+        case "seq" [rep []]
+        case _ [rep [array-end]]
+    case "seq"
+      match (ebnf-transduce-pushes rule)
+        case "item" [rep []]
+        case _ [rep [array-end]]
+    case "item"
+      match (ebnf-transduce-pushes rule)
+        case "post" [rep []]
+        case _
+          match rep
+            case true [false [array-end object-end]]
+            case false [false [object-end]]
+    case "post" [rep []]
+    case "atom" [rep []]
+    case _ (fail :protocol-order "a rule pass of a rule the EBNF meta-grammar does not have")
+
+def ebnf-transduce-step [state pass]
+  match state
+    case [started rep]
+      let [out (match pass (case (open rule) (ebnf-transduce-open rep rule)) (case (close rule) (ebnf-transduce-close rep rule)))]
+        match out
+          case [next events] (transition [true next] events)
+
+; A source that made no pass is the grammar of no rules.
+def ebnf-transduce-finish [state]
+  match state
+    case [false rep] [object-start (key "type") (scalar "grammar") (key "rules") array-start array-end object-end]
+    case [true rep] []
+
+def ebnf-transduce [input]
+  as-events (scan-emit [false false] ebnf-transduce-step ebnf-transduce-finish (parser-events input))

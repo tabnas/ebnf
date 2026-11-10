@@ -1,2053 +1,859 @@
-; EBNF's render: a grammar-spec tree, the GrammarSpec the tabnas BNF
-; compiler (tabnas-bnf) emits for a grammar, written back as W3C EBNF
-; (XML 1.0 section 6), the dialect this repository reads. This is a
-; library of definitions, each named `ebnf-...`, which a host links with
-; its own program (alchemy's `compile_sources`); its entry point is
-; `ebnf-render`, and nothing else here is the host's to call.
+; EBNF's render: a grammar-rules tree written as W3C EBNF (XML 1.0
+; section 6), the dialect this repository reads, a rule at a time as its
+; events arrive. This is a library of definitions, each named
+; `ebnf-render-...` but its entry point, `ebnf-render`, which a host
+; links with its own program (alchemy's `compile_sources`); nothing else
+; here is the host's to call.
 ;
-; A host reads an EBNF document by compiling it: the grammar-spec tree is
-; the pure-data GrammarSpec that tabnas-bnf's `compileSpec(ebnfConvert(src,
-; {builtins: true}), {recognition: false, strict: true})` writes
-; (`compile_spec` over `ebnf_convert` in Rust, the same text; `ToJsonic`
-; over `ToPureSpec` over `Ebnf` in Go, which writes its keys in name
-; order), parsed as JSON. Its schema is `grammar-spec`, shared with ABNF
-; and GBNF, whose compilers emit the same shape; the contract is the round
-; trip: the text written here compiles back to the spec it was written
-; from.
+; The tree is the schema `grammar-rules` (tabnas/bnf's
+; docs/grammar-rules.md, and section 13.1 of alchemy's
+; docs/streaming-plan.md): `{"type": "grammar", ["start"], "rules":
+; [...]}`, each rule `{"type": "rule", "name", ["incremental": true],
+; "alternatives"}`, an alternative a list of elements, and an element an
+; object whose `type` comes first and whose other members follow in the
+; schema's order, its repetitions, `repeat`, last. EBNF's reader builds
+; it, and so do ABNF's and GBNF's, so a grammar read in another notation
+; is written here too.
 ;
-; The spec is a compiled grammar, not the grammar's text, so the render
-; reads the compiler's shapes back into the notation:
+; The text: a rule on a line of its own, `name ::= ...`, its alternatives
+; between ` | `, the elements of an alternative between spaces, a group
+; in `( ... )`; a repetition as the postfix operators W3C EBNF has (`?`,
+; `*`, `+`), after the element, the innermost first, an element of more
+; than one term in parentheses before one, and another count as its
+; copies, the least of them, and then, to its most, nested options
+; (`A A ( A A? )?` for two to four), or the last copy repeated (`A A+`
+; for two or more). An alternative that is empty, which W3C EBNF has no
+; form for, makes the others an option (`( A | B )?`), so a rule is
+; written once its alternatives have ended. A literal is a string in
+; double quotes, or in single quotes where it holds a double quote; a
+; character, and a control character alone, a code point (`#x41`); a
+; range, a class and any character a bracket expression, each member a
+; printable ASCII character or a code point. EBNF starts from its first
+; rule: a grammar whose `start` names another (GBNF's, which starts from
+; root) is written with that rule first, the text of the rules before it
+; held until it has been written; nothing is held when the start rule
+; comes first, or where there is no start, and a start naming a rule the
+; grammar does not define is refused at its end. An RFC 5234 core rule
+; (`ALPHA`, `DIGIT` and the rest) the grammar references and does not
+; define is written as a rule of its own, after the others, as ABNF's
+; compiler adds it. The empty grammar is no text at all.
 ;
-; - A rule the author wrote is a rule of the spec that the spec's
-;   `meta.provenance` does not name (a spec without it is read by the
-;   names the compiler gives its rules, a helper's only where it has
-;   the shape of its kind too, and the start wrapper by its shape);
-;   every rule it names is the compiler's: a repetition's, an
-;   option's or a group's helper (`_gen<n>_star_...`, `_plus_`, `_opt_`,
-;   `_rep_`, `_group`), a sequence's chain steps (`$alt<i>`,
-;   `$step<j>`), a left-factored tail (`$fact<k>`) and the start
-;   wrapper. A helper is written where it is referenced, as the
-;   construct it compiles: a repeat loop (the replace loop every `A*`
-;   compiles to, its entry `{c: {n.rep: 0}, r: <self>}`) as `A*`, a plus
-;   as `A+`, an option as `A?` (stacked on another postfix where one
-;   repetition holds another, `A+?`), a group as `( ... )`. A factored
-;   tail is expanded back into the alternatives it was factored from,
-;   which the compiler factors again, and alternatives that were each a
-;   group, which the compiler factored into the first, are read back as
-;   the groups they were.
-; - An alternative of a rule is read from the alternates the compiler
-;   emitted for it: a chain of steps, one per segment of terminals and a
-;   reference; a dispatcher's `$alt<i>` rules; or, for a rule whose every
-;   alternative is one segment, its open alternates, each read as the
-;   tokens it consumes (its `s` less the `b` it gives back) and the rule
-;   it pushes, the lookahead copies the dispatch made of one alternative
-;   read as one, and those that push a helper in the order of the
-;   helpers' numbers, which the compiler gives them before it reorders
-;   the alternatives to tell them apart.
-; - A leading reference the compiler substituted by the referenced rule's
-;   alternatives is written back where those alternatives, each followed
-;   by one same tail, still stand together.
-; - A token is written as the terminal it matches: a fixed token as a
-;   string, in double quotes or, where it holds one, single quotes; a
-;   class as `[...]` (a token set the compiler laid over a contested
-;   class read back from its name, once its tokens are found to be that
-;   class), each member a printable ASCII character or a code point,
-;   `#x<hex>`, and a member written right after a code point as a code
-;   point too where it would begin with a hexadecimal digit, which W3C
-;   EBNF would read as more of the code point before it (`#x5Cb` is
-;   U+5CB); the engine's `TX`, `NR`, `ST` and `VL` by their names. A
-;   token named for a rule the compiler lifted to it (`plus ::= "+"`
-;   becomes the token `#plus`) is written as that rule, after the
-;   others, and referenced by name.
-; - The start rule is written first, since this dialect starts from its
-;   first rule.
+; The contract is the round trip: an EBNF document's tree, written, reads
+; back as that tree but where EBNF spells one thing two ways (`=` and a
+; closing `;`, a comma between items, a code point term and the string it
+; matches), and that tree is written again as the same text. A grammar of
+; another notation reads back as a tree this render writes as the same
+; text, since what EBNF spells otherwise is written as EBNF spells it: a
+; case-insensitive literal (ABNF's quoted string) of one letter as the
+; class of its two cases, and one holding no letter as a string. What
+; EBNF cannot say is refused with TARGET_VALUE_UNREPRESENTABLE, naming
+; the rule and what it met: prose, a tokenizer terminal, an incremental
+; rule (`=/`), a name EBNF cannot spell (a letter or `_`, then letters,
+; digits, `_`, `.` and `-`), an empty class, the empty literal, a literal
+; no one EBNF terminal spells (since this front end reads whitespace
+; between terminals, a run of them would match the literal with
+; whitespace inside: one holding both quotes, or a control character
+; beside other characters, and a case-insensitive one holding a letter
+; beside another character, or a character past ASCII that may have
+; cases), a repetition of no copies, one of more than 64 copies past its
+; least, or of more than 8,192 in all, and a rule whose alternatives are
+; all empty. A tree that is not the schema's (a root that is no grammar,
+; a node's type first nowhere, a member a node does not have, out of its
+; place, missing or of the wrong kind) is refused the same way, naming
+; what was met.
 ;
-; What a rule cannot be read back to is refused with
-; TARGET_VALUE_UNREPRESENTABLE, naming the rule: an action other than
-; the tree builders every compiled grammar carries (a value annotation's
-; builders, a user action, the probe dispatcher's), a condition or a
-; counter other than a repeat loop's, an error generator or an alternate
-; modifier (`e`, `h`), a function reference where a rule or a count is
-; due, a set of tokens at one place, the form that edits a rule already
-; installed (`{alts, inject}`), a removal, and a token no EBNF terminal
-; matches (a negated class, a class holding a character past ASCII
-; alone, a class whose flags change what it matches, a pattern that is
-; neither one class nor an escaped literal). A token set whose tokens
-; are not the class its name gives, a rule with no alternate to open
-; with, a sequence's step with more alternates than a step, and a rule
-; the compiler lifted to a token whose name another rule holds are
-; refused too. A spec serialized by Go, which writes its rules in name
-; order and its match tokens' order as a list of its own
-; (`options.match.tokenOrder`), is refused when that list holds two
-; tokens or more: the rules' order, which ranks the tokens (the order
-; the lexer tries two tokens a place expects), is lost. The tree
-; builders and the marks are not written: the compiler makes them again
-; from the rules.
-; A spec whose start is not the start wrapper every grammar text
-; compiles to (one open alternate that matches nothing and pushes a
-; rule, closed by the end of the source alone) is refused as well: its
-; text would compile back inside such a wrapper, whose close lets the
-; end of the source come after what the lexer skips.
-;
-; A literal no one EBNF terminal spells is refused too, since this front
-; end reads whitespace between terminals and the run that would spell it
-; would match the literal with whitespace inside: a case-insensitive
-; literal (ABNF's default) holding a letter beside another character, a
-; literal holding a control character or both quotes beside other
-; characters. A name this dialect cannot spell is refused.
-;
-; A spec compiled from another notation is written as far as W3C EBNF can
-; say it, each in a form that matches exactly what the spec matches and
-; compiles back to that form: a case-insensitive literal of one letter
-; (ABNF's default) as the class of its two cases and one holding no letter
-; as a string, a lone character no string holds as its code point, a
-; counted repetition as its copies and nested options, an empty
-; alternative by making the others optional, `[\s\S]` (GBNF's `.`) as the
-; class of every code point, and an RFC 5234 core rule as a rule of its
-; own.
-;
-; No text is written nested deeper than this front end reads back, 128
-; levels (see "how deep the text nests"): a counted repetition whose
-; nested options would put its item past that is refused, naming the
-; repetition and the level, and so is a rule any other element of which
-; would be written past it, naming the rule and the level.
-;
-; The whole spec is materialized before a line is written: a rule's
-; alternatives are spread over its chain rules and helpers, which the
-; spec keeps elsewhere in its `rule` object.
+; The state is a stack of the containers open, innermost last:
+; [:grammar key at info] for the root, `info` the first rule's name,
+; whether a rule is named root, and the core rules referenced and
+; defined; [:rules] for its rules; [:rule key at name incremental] for a
+; rule; [:alts owner count texts] for a rule's (owner :rule) or a group's
+; (owner :group) alternatives; [:alt owner text] for an alternative;
+; [:element key at pairs] for an element, its members so far as [name
+; value] pairs; [:members items] and [:member key from to] for a class's
+; members; [:repeats items] and [:repeat key min max] for an element's
+; repetitions; and :done once the grammar has closed. A rule is written
+; as it ends, so the state holds one rule's text at a time, and nothing
+; grows with the grammar's length but `info`, which holds at most the
+; sixteen core rules' names twice, and the text held before a start
+; that is not the first rule.
 
-; ---- text and vectors
+; ---- refusals and small helpers
 
-def ebnf-at [v i]
-  get-path (as-path [i]) v
+def ebnf-render-refuse [what]
+  fail :unrepresentable (string-join "" ["the grammar cannot be written as EBNF: " what])
 
-def ebnf-num [n]
-  scalar-text csv-options n
+def ebnf-render-shape [what]
+  fail :unrepresentable (string-join "" ["the tree is not a grammar-rules tree: " what])
 
-def ebnf-empty [s]
-  match s
-    case "" true
-    case _ false
-
-def ebnf-full [s]
-  match s
-    case "" false
-    case _ true
-
-; Whether the strings a and b are the same: a string cut by itself is two
-; empty strings, and by any other string it is not.
-def ebnf-same [a b]
-  match b
-    case "" (ebnf-empty a)
-    case _
-      match (split b a)
-        case ["" ""] true
-        case _ false
-
-def ebnf-not [x]
+def ebnf-render-not [x]
   match x
     case true false
     case false true
 
-def ebnf-less [a b]
-  match (compare a b)
-    case :less true
-    case _ false
-
-def ebnf-some [v]
-  match (count v)
-    case 0 false
+def ebnf-render-at-least [n m]
+  match (compare n m)
+    case :less false
     case _ true
 
-def ebnf-none [v]
-  match (count v)
-    case 0 true
-    case _ false
+def ebnf-render-has-letter [text]
+  ebnf-render-not (chars-within [[0 64] [91 96] [123 1114111]] text)
 
-def ebnf-rest [v]
-  map (fn [i] (ebnf-at v i)) (filter (fn [i] (match i (case 0 false) (case _ true))) (indices v))
+; The value a pair of an element's members gives the name, or missing.
+def ebnf-render-pair [name pairs]
+  let [found (filter (fn [p] (equal (ebnf-render-at p 0) name)) pairs)]
+    match (count found)
+      case 0 missing
+      case _ (ebnf-render-at (ebnf-render-at found 0) 1)
 
-def ebnf-take [n v]
-  map (fn [i] (ebnf-at v i)) (filter (fn [i] (ebnf-less i n)) (indices v))
+; ---- code points as hexadecimal digits
 
-def ebnf-drop [n v]
-  map (fn [i] (ebnf-at v i)) (filter (fn [i] (ebnf-not (ebnf-less i n))) (indices v))
+; Each hexadecimal place's fifteen multiples, from the place of 16^5.
+def ebnf-render-places [[1048576 2097152 3145728 4194304 5242880 6291456 7340032 8388608 9437184 10485760 11534336 12582912 13631488 14680064 15728640] [65536 131072 196608 262144 327680 393216 458752 524288 589824 655360 720896 786432 851968 917504 983040] [4096 8192 12288 16384 20480 24576 28672 32768 36864 40960 45056 49152 53248 57344 61440] [256 512 768 1024 1280 1536 1792 2048 2304 2560 2816 3072 3328 3584 3840] [16 32 48 64 80 96 112 128 144 160 176 192 208 224 240] [1 2 3 4 5 6 7 8 9 10 11 12 13 14 15]]
 
-; Whether s begins with the non-empty p, ends with it; s after its first
-; p, before its last.
-def ebnf-starts [p s]
-  match s
+; A number's digit at a place: how many of the place's multiples it
+; reaches.
+def ebnf-render-digit [n multiples]
+  count (filter (fn [m] (ebnf-render-at-least n m)) multiples)
+
+; The number less its digit's multiple of the place.
+def ebnf-render-less [n multiples d]
+  match d
+    case 0 n
+    case _ (sub n (ebnf-render-at multiples (sub d 1)))
+
+def ebnf-render-hex-walk [self places n acc]
+  match (count places)
+    case 0 acc
+    case _
+      let [ms (ebnf-render-at places 0)]
+        let [d (ebnf-render-digit n ms)]
+          self self (ebnf-render-rest places) (ebnf-render-less n ms d) (push (ebnf-render-at ebnf-render-hex-digits d) acc)
+
+; A code point's hexadecimal digits in capitals, without leading zeros
+; but two of them at least: `0A`, `41`, `10FFFF`.
+def ebnf-render-hex [n]
+  let [digits (ebnf-render-hex-walk ebnf-render-hex-walk ebnf-render-places n [])]
+    let [firsts (filter (fn [i] (ebnf-render-not (equal (ebnf-render-at digits i) "0"))) [0 1 2 3])]
+      let [k (match (count firsts) (case 0 4) (case _ (ebnf-render-at firsts 0)))]
+        string-join "" (map (fn [i] (ebnf-render-at digits i)) (filter (fn [i] (ebnf-render-at-least i k)) (indices digits)))
+
+; A number checked to be a code point.
+def ebnf-render-point [what n]
+  match (kind n)
+    case :number
+      match [(ebnf-render-at-least n 0) (ebnf-render-at-least 1114111 n)]
+        case [true true] n
+        case _ (ebnf-render-shape (string-join "" [what " is not a code point"]))
+    case _ (ebnf-render-shape (string-join "" [what " is not a number"]))
+
+; ---- EBNF's terminals
+
+; Whether EBNF spells a name: a letter or `_`, then letters, digits, `_`,
+; `.` and `-`.
+def ebnf-render-spells [name]
+  match name
     case "" false
-    case _ (ebnf-empty (ebnf-at (split p s) 0))
+    case _
+      match [(chars-within [[45 46] [48 57] [65 90] [95 95] [97 122]] name) (ebnf-render-some (filter (fn [c] (ebnf-render-starts c name)) ["-" "." "0" "1" "2" "3" "4" "5" "6" "7" "8" "9"]))]
+        case [true false] true
+        case _ false
 
-def ebnf-ends [p s]
-  match s
-    case "" false
-    case _ (ebnf-empty (top (split p s)))
+; A rule's name, as EBNF spells one.
+def ebnf-render-name [name]
+  match name
+    case "" (ebnf-render-refuse "a rule has the empty name, which EBNF cannot spell")
+    case _
+      match (ebnf-render-spells name)
+        case true name
+        case false (ebnf-render-refuse (string-join "" ["the rule " (quoted name) " has a name EBNF cannot spell"]))
 
-def ebnf-after [p s]
-  string-join p (ebnf-rest (split p s))
+; A reference: the name of a rule, as EBNF spells one.
+def ebnf-render-reference [rname name]
+  match name
+    case "" (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " references the empty name, which EBNF cannot spell"]))
+    case _
+      match (ebnf-render-spells name)
+        case true name
+        case false (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " references " (quoted name) ", a name EBNF cannot spell"]))
 
-def ebnf-before [p s]
-  string-join p (pop (split p s))
+; A character of ASCII, from its code point.
+def ebnf-render-ascii-char [cp]
+  ebnf-render-at (ebnf-render-at ebnf-render-ascii cp) 0
 
-def ebnf-digits [s]
-  match s
-    case "" false
-    case _ (chars-within [[48 57]] s)
+; The characters of ASCII.
+def ebnf-render-ascii-chars
+  map (fn [i] (ebnf-render-ascii-char i)) (indices ebnf-render-ascii)
 
-; The items of two vectors, and of a vector of vectors, in order: each
-; item is named by its place, the places joined as text and read back.
-def ebnf-cat [a b]
-  ebnf-flat [a b]
+; A code point as W3C EBNF writes one: `#x` and its hexadecimal digits.
+def ebnf-render-hex-point [cp]
+  string-join "" ["#x" (ebnf-render-hex cp)]
 
-def ebnf-flat [vv]
+; The code point of a text of one character of ASCII, or -1.
+def ebnf-render-ascii-code [text]
+  let [found (filter (fn [i] (equal (ebnf-render-ascii-char i) text)) (indices ebnf-render-ascii))]
+    match (count found)
+      case 1 (ebnf-render-at found 0)
+      case _ -1
+
+; The characters a string holds as themselves: printable ASCII and every
+; character past it. A control character, DEL among them, the string's
+; escape, is no string's.
+def ebnf-render-printable [[32 126] [128 1114111]]
+
+; A literal that matches exactly: a string in double quotes, or in single
+; quotes where it holds a double quote; a control character alone as its
+; code point. A literal no one EBNF terminal spells (both quotes, or a
+; control character beside other characters) is refused, since this
+; front end reads whitespace between terminals, so a run of them would
+; match the literal with whitespace inside.
+def ebnf-render-exact [rname text]
+  match text
+    case "" (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the empty literal, which EBNF has no form for"]))
+    case _
+      match (chars-within ebnf-render-printable text)
+        case true
+          match [(ebnf-render-at-least (count (split "\"" text)) 2) (ebnf-render-at-least (count (split "'" text)) 2)]
+            case [false q] (string-join "" ["\"" text "\""])
+            case [true false] (string-join "" ["'" text "'"])
+            case _ (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the literal " (quoted text) ", which holds both quotes, and no one EBNF terminal spells"]))
+        case false
+          match (ebnf-render-ascii-code text)
+            case -1 (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the literal " (quoted text) ", which holds a control character beside other characters, and no one EBNF terminal spells"]))
+            case cp (ebnf-render-hex-point cp)
+
+; The two cases of the letters of ASCII.
+def ebnf-render-cases [["a" "A"] ["b" "B"] ["c" "C"] ["d" "D"] ["e" "E"] ["f" "F"] ["g" "G"] ["h" "H"] ["i" "I"] ["j" "J"] ["k" "K"] ["l" "L"] ["m" "M"] ["n" "N"] ["o" "O"] ["p" "P"] ["q" "Q"] ["r" "R"] ["s" "S"] ["t" "T"] ["u" "U"] ["v" "V"] ["w" "W"] ["x" "X"] ["y" "Y"] ["z" "Z"]]
+
+; The characters a case-insensitive literal matches as it would without
+; regard to case, since they have none: ASCII but its letters, and the
+; characters past U+FFFF but those of the scripts that have cases
+; (Deseret, Osage, Vithkuqi, Old Hungarian, Garay, Warang Citi,
+; Medefaidrin, Adlam). A character of the Basic Multilingual Plane past
+; ASCII may have cases.
+def ebnf-render-caseless [[0 127] [65536 66559] [66640 66735] [66816 66927] [67008 68735] [68864 68927] [69008 71839] [71936 93759] [93856 125183] [125280 1114111]]
+
+; A literal: one that matches exactly, or nothing in which has a case, as
+; a string; a case-insensitive one of one letter as the class of its two
+; cases. A case-insensitive literal holding a letter beside another
+; character, or a character past ASCII that may have cases, is refused:
+; no one EBNF terminal spells it.
+def ebnf-render-literal [rname text cs]
+  match cs
+    case true (ebnf-render-exact rname text)
+    case _
+      match [(ebnf-render-has-letter text) (chars-within ebnf-render-caseless text)]
+        case [false true] (ebnf-render-exact rname text)
+        case [true true]
+          let [pair (filter (fn [p] (match [(equal text (ebnf-render-at p 0)) (equal text (ebnf-render-at p 1))] (case [false false] false) (case _ true))) ebnf-render-cases)]
+            match (count pair)
+              case 1 (string-join "" ["[" (ebnf-render-at (ebnf-render-at pair 0) 0) (ebnf-render-at (ebnf-render-at pair 0) 1) "]"])
+              case _ (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the case-insensitive literal " (quoted text) ", which holds a letter beside another character, and no one EBNF terminal spells"]))
+        case _ (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the case-insensitive literal " (quoted text) ", which holds a character past ASCII that may have cases"]))
+
+; A class's member's code point as itself: printable ASCII but the marks a
+; class reads (`#`, `-`, `]`, `^`), and, where the class writes any code
+; point, but a hexadecimal digit, which W3C EBNF reads into the code
+; point before it for as long as the digits go (#x5Cb is U+5CB). "" where
+; it is written as a code point.
+def ebnf-render-raw [cp points]
+  match [(ebnf-render-at-least cp 32) (ebnf-render-at-least 126 cp)]
+    case [true true]
+      match (ebnf-render-some (filter (fn [m] (equal m cp)) [35 45 93 94]))
+        case true ""
+        case false
+          match [points (chars-within [[48 57] [65 70] [97 102]] (ebnf-render-ascii-char cp))]
+            case [true true] ""
+            case _ (ebnf-render-ascii-char cp)
+    case _ ""
+
+def ebnf-render-member-point [cp points]
+  match (ebnf-render-raw cp points)
+    case "" (ebnf-render-hex-point cp)
+    case c c
+
+; A class: `[`, `^` where it is negated, its members, a code point or a
+; range of two, and `]`.
+def ebnf-render-class [rname negated members]
+  match (count members)
+    case 0 (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds an empty class, which EBNF has no form for"]))
+    case _
+      let [points (ebnf-render-some (filter (fn [m] (match m (case [from to] (match [(ebnf-render-raw from false) (ebnf-render-raw to false)] (case ["" t] true) (case [f ""] true) (case _ false))))) members))]
+        string-join "" ["[" (match negated (case true "^") (case false "")) (string-join "" (map (fn [m] (match m (case [from to] (match (equal from to) (case true (ebnf-render-member-point from points)) (case false (string-join "" [(ebnf-render-member-point from points) "-" (ebnf-render-member-point to points)])))))) members)) "]"]
+
+; ---- EBNF's elements
+
+; The most copies past a repetition's least that EBNF writes, each a
+; nested option, and the most copies it writes of one element in all.
+def ebnf-render-most-options 64
+
+def ebnf-render-most-copies 8192
+
+; Copies of an element: `n` of `text`, between spaces.
+def ebnf-render-copies [text n]
+  string-join "" [(repeat (sub n 1) (string-join "" [text " "])) text]
+
+; An element's text and its repetitions, the innermost first, as
+; [text atom], atom true where the text is one element a postfix operator
+; can follow. W3C EBNF has `?`, `*` and `+`: another count is written as
+; its copies, the least of them, and then, to its most, nested options,
+; `A A ( A A? )?` for two to four.
+def ebnf-render-repeated [self rname reps state]
+  match (count reps)
+    case 0 (ebnf-render-at state 0)
+    case _
+      let [rep (ebnf-render-at reps 0)]
+        match state
+          case [text atom]
+            let [one (match atom (case true text) (case false (string-join "" ["( " text " )"])))]
+              let [next (match rep (case [0 1] [(string-join "" [one "?"]) true]) (case [0 -1] [(string-join "" [one "*"]) true]) (case [1 -1] [(string-join "" [one "+"]) true]) (case [1 1] [text atom]) (case [0 0] (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds a repetition of no copies, whose element EBNF has no form for"]))) (case [m -1] (ebnf-render-counted rname one m 0 true)) (case [m n] (ebnf-render-counted rname one m (sub n m) false)))]
+                self self rname (ebnf-render-rest reps) next
+
+; `m` copies of `one`, then `k` nested options of it, or, unbounded, one
+; or more of it last.
+def ebnf-render-counted [rname one m k unbounded]
+  match [(ebnf-render-at-least ebnf-render-most-options k) (ebnf-render-at-least ebnf-render-most-copies (add m k))]
+    case [true true]
+      match unbounded
+        case true [(string-join "" [(ebnf-render-copies one (sub m 1)) " " one "+"]) false]
+        case false
+          let [opts (match k (case 0 "") (case _ (string-join "" [(repeat (sub k 1) (string-join "" ["( " one " "])) one "?" (repeat (sub k 1) " )?")])))]
+            match [m k]
+              case [0 kk] [opts true]
+              case [mm 0] [(ebnf-render-copies one m) false]
+              case _ [(string-join "" [(ebnf-render-copies one m) " " opts]) false]
+    case [false c] (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds a repetition of more than " (ebnf-render-num ebnf-render-most-options) " copies past its least, which EBNF writes as as many nested options"]))
+    case _ (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds a repetition of more than " (ebnf-render-num ebnf-render-most-copies) " copies, past what the compiler expands"]))
+
+; An element's text, from its members: [name value] pairs, `alternatives`
+; the texts of a group's alternatives, `members` a class's [from to]
+; spans, `repeat` the element's [min max] repetitions, written after it.
+def ebnf-render-element [rname pairs]
+  let [type (ebnf-render-pair "type" pairs)]
+    let [need (filter (fn [m] (match (ebnf-render-pair m pairs) (case missing true) (case _ false))) (as-vector (ebnf-render-members type)))]
+      match (count need)
+        case 0
+          let [reps (match (ebnf-render-pair "repeat" pairs) (case missing []) (case r (as-vector r)))]
+            ebnf-render-repeated ebnf-render-repeated rname reps [(ebnf-render-atom rname type pairs) true]
+        case _ (ebnf-render-shape (string-join "" ["a " type " with no " (ebnf-render-at need 0)]))
+
+; Alternatives' texts, each its elements after a space, as EBNF writes
+; them, [text optional]: between bars, and, where any is empty, which EBNF
+; has no form for, the others, to be written as an option, `( A | B )?`.
+; Where all are empty there is nothing to write.
+def ebnf-render-alternatives [rname texts]
+  let [full (filter (fn [t] (match t (case "" false) (case _ true))) texts)]
+    match [(count full) (equal (count full) (count texts))]
+      case [0 e] (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds alternatives that are all empty, which EBNF has no form for"]))
+      case [n all] [(string-join " |" full) (ebnf-render-not all)]
+
+; An element's text before its repetitions.
+def ebnf-render-atom [rname type pairs]
+  match type
+    case "reference" (ebnf-render-reference rname (ebnf-render-pair "name" pairs))
+    case "literal" (ebnf-render-literal rname (ebnf-render-pair "text" pairs) (ebnf-render-pair "caseSensitive" pairs))
+    case "char" (ebnf-render-hex-point (ebnf-render-pair "value" pairs))
+    case "range"
+      match (ebnf-render-at-least (ebnf-render-pair "to" pairs) (ebnf-render-pair "from" pairs))
+        case true (ebnf-render-class rname false [[(ebnf-render-pair "from" pairs) (ebnf-render-pair "to" pairs)]])
+        case false (ebnf-render-shape "a range whose to is below its from")
+    case "any" (ebnf-render-class rname false [[0 1114111]])
+    case "token" (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the token terminal " (quoted (ebnf-render-pair "text" pairs)) ", which EBNF has no form for"]))
+    case "prose" (ebnf-render-refuse (string-join "" ["the rule " (quoted rname) " holds the prose " (quoted (ebnf-render-pair "text" pairs)) ", which EBNF has no form for"]))
+    case "class" (ebnf-render-class rname (ebnf-render-pair "negated" pairs) (as-vector (ebnf-render-pair "members" pairs)))
+    case "group"
+      match (ebnf-render-alternatives rname (as-vector (ebnf-render-pair "alternatives" pairs)))
+        case [text false] (string-join "" ["(" text " )"])
+        case [text true] (string-join "" ["(" text " )?"])
+
+; A rule's text: its name and `::=`, then its alternatives.
+def ebnf-render-rule-text [name texts]
+  match (ebnf-render-alternatives name texts)
+    case [text false] (string-join "" [(ebnf-render-name name) " ::=" text])
+    case [text true] (string-join "" [(ebnf-render-name name) " ::= (" text " )?"])
+
+; ---- the start rule and the core rules
+
+; RFC 5234's core rules, which ABNF's compiler adds where they are
+; referenced and not defined, and EBNF's text for each.
+def ebnf-render-core ["ALPHA" "BIT" "CHAR" "CR" "CRLF" "CTL" "DIGIT" "DQUOTE" "HEXDIG" "HTAB" "LF" "LWSP" "OCTET" "SP" "VCHAR" "WSP"]
+
+def ebnf-render-core-text [name]
+  match name
+    case "ALPHA" "ALPHA ::= [A-Za-z]"
+    case "BIT" "BIT ::= [01]"
+    case "CHAR" "CHAR ::= [#x01-#x7F]"
+    case "CR" "CR ::= #x0D"
+    case "CRLF" "CRLF ::= #x0D #x0A"
+    case "CTL" "CTL ::= [#x00-#x1F#x7F]"
+    case "DIGIT" "DIGIT ::= [0-9]"
+    case "DQUOTE" "DQUOTE ::= '\"'"
+    case "HEXDIG" "HEXDIG ::= [0-9A-Fa-f]"
+    case "HTAB" "HTAB ::= #x09"
+    case "LF" "LF ::= #x0A"
+    case "LWSP" "LWSP ::= ( [ #x09] | #x0D #x0A [ #x09] )*"
+    case "OCTET" "OCTET ::= [#x00-#xFF]"
+    case "SP" "SP ::= \" \""
+    case "VCHAR" "VCHAR ::= [!-~]"
+    case "WSP" "WSP ::= [ #x09]"
+
+def ebnf-render-among [s v]
+  ebnf-render-some (filter (fn [x] (equal x s)) v)
+
+; EBNF starts from its first rule, so it holds the rules before a start
+; that is not its first, and its stack notes nothing of the start.
+def ebnf-render-holds true
+
+def ebnf-render-start-noted [stack name]
+  stack
+
+; A rule's head is read: its name noted in the root's `info` where it is
+; a core rule.
+def ebnf-render-noted [stack name]
+  match (ebnf-render-at stack 0)
+    case [:grammar key at [fst hasroot refs defs]]
+      let [info [fst hasroot refs (match [(ebnf-render-among name ebnf-render-core) (ebnf-render-among name defs)] (case [true false] (push name defs)) (case _ defs))]]
+        ebnf-render-cat [[:grammar key at info]] (ebnf-render-rest stack)
+
+; The root's `info`.
+def ebnf-render-info [stack]
+  match (ebnf-render-at stack 0)
+    case [:grammar key at info] info
+
+; An element has ended: a reference to a core rule noted in `info`, the
+; first time.
+def ebnf-render-referenced [stack pairs]
+  match (ebnf-render-pair "type" pairs)
+    case "reference"
+      let [name (ebnf-render-pair "name" pairs)]
+        match [(ebnf-render-among name ebnf-render-core) (ebnf-render-among name (ebnf-render-at (ebnf-render-info stack) 2))]
+          case [true false]
+            match (ebnf-render-at stack 0)
+              case [:grammar key at [fst hasroot refs defs]] (ebnf-render-cat [[:grammar key at [fst hasroot (push name refs) defs]]] (ebnf-render-rest stack))
+          case _ stack
+    case _ stack
+
+; The grammar has ended: the core rules it references and does not
+; define.
+def ebnf-render-grammar-end [info]
+  match info
+    case [fst hasroot refs defs]
+      let [cores (filter (fn [c] (match [(ebnf-render-among c refs) (ebnf-render-among c defs)] (case [true false] true) (case _ false))) ebnf-render-core)]
+        string-join "" (map (fn [c] (string-join "" [(ebnf-render-core-text c) "\n"])) cores)
+
+; ---- elements
+
+; The members each type of element has, in the schema's order.
+def ebnf-render-members [type]
+  match type
+    case "reference" ["name"]
+    case "literal" ["text" "caseSensitive"]
+    case "char" ["value"]
+    case "range" ["from" "to"]
+    case "class" ["negated" "members"]
+    case "any" []
+    case "token" ["negated" "text"]
+    case "prose" ["text"]
+    case "group" ["alternatives"]
+    case _ missing
+
+; A member's place in its element, 1 for the first after `type`; the
+; repetitions come last.
+def ebnf-render-place [type name]
+  match name
+    case "repeat" 9
+    case _
+      let [list (as-vector (ebnf-render-members type))]
+        let [at (filter (fn [i] (equal (ebnf-render-at list i) name)) (indices list))]
+          match (count at)
+            case 0 missing
+            case _ (inc (ebnf-render-at at 0))
+
+; The value a scalar member must hold.
+def ebnf-render-scalar-kind [name]
+  match name
+    case "name" :string
+    case "text" :string
+    case "caseSensitive" :boolean
+    case "negated" :boolean
+    case "value" :number
+    case "from" :number
+    case "to" :number
+    case _ missing
+
+
+; ---- the events
+
+; The stack with its innermost container replaced.
+def ebnf-render-put [stack frame]
+  push frame (pop stack)
+
+; The rule an element is in: the third container from the root.
+def ebnf-render-rule-name [stack]
+  match (ebnf-render-at stack 2)
+    case [:rule key at name incremental] name
+
+; An element has ended: its text, written where a rule's alternative
+; holds it, or held where a group's does.
+def ebnf-render-element-end [stack frame]
+  match frame
+    case [:element key at pairs]
+      let [text (ebnf-render-element (ebnf-render-rule-name stack) pairs) rest (ebnf-render-referenced (pop stack) pairs)]
+        match (top rest)
+          case [:alt :rule t] (transition (ebnf-render-put rest [:alt :rule (string-join "" [t " " text])]) [])
+          case [:alt :group t] (transition (ebnf-render-put rest [:alt :group (string-join "" [t " " text])]) [])
+
+def ebnf-render-object-start [stack]
+  match (count stack)
+    case 0 (transition [[:grammar "" 0 ["" false [] []]]] [])
+    case _
+      match (top stack)
+        case [:rules] (transition (push [:rule "" 0 "" false] stack) [])
+        case [:alt owner text] (transition (push [:element "" 0 []] stack) [])
+        case [:members items] (transition (push [:member "" -1 -1] stack) [])
+        case [:repeats items] (transition (push [:repeat "" -1 -1] stack) [])
+        case _ (ebnf-render-shape "an object where none is")
+
+def ebnf-render-object-end [stack]
+  match (top stack)
+    case [:grammar key at info]
+      match at
+        case 2 (transition [:done] [(ebnf-render-grammar-end info)])
+        case _ (ebnf-render-shape "a grammar with no rules")
+    case [:rule key at name incremental]
+      match at
+        case 4 (transition (pop stack) ["\n"])
+        case _ (ebnf-render-shape (string-join "" ["the rule " (quoted name) " has no alternatives"]))
+    case [:element key at pairs] (ebnf-render-element-end stack (top stack))
+    case [:member key from to]
+      match [(ebnf-render-at-least from 0) (ebnf-render-at-least to 0)]
+        case [true true]
+          match (ebnf-render-at-least to from)
+            case true
+              let [rest (pop stack)]
+                match (top rest)
+                  case [:members items] (transition (ebnf-render-put rest [:members (push [from to] items)]) [])
+            case false (ebnf-render-shape "a class's member whose to is below its from")
+        case _ (ebnf-render-shape "a class's member with no from or no to")
+    case [:repeat key min max]
+      match (ebnf-render-at-least min 0)
+        case true
+          match (match (equal max -1) (case true true) (case false (ebnf-render-at-least max min)))
+            case true
+              let [rest (pop stack)]
+                match (top rest)
+                  case [:repeats items] (transition (ebnf-render-put rest [:repeats (push [min max] items)]) [])
+            case false (ebnf-render-shape "a repetition whose max is below its min")
+        case false (ebnf-render-shape "a repetition with no min")
+    case _ (ebnf-render-shape "an object's end where none is open")
+
+; An element's member that is a list begins: a group's alternatives, a
+; class's members or the repetitions.
+def ebnf-render-element-array [stack frame]
+  match frame
+    case [:element key at pairs]
+      let [type (ebnf-render-pair "type" pairs)]
+        match [key (ebnf-render-place type key)]
+          case [k missing] (ebnf-render-shape (string-join "" ["a " type " has no member " key]))
+          case [k place]
+            match (ebnf-render-at-least at place)
+              case true (ebnf-render-shape (string-join "" ["a " type "'s " key " comes after what it precedes, or twice"]))
+              case false
+                let [here (ebnf-render-put stack [:element "" place pairs])]
+                  match key
+                    case "alternatives" (transition (push [:alts :group 0 []] here) [])
+                    case "members" (transition (push [:members []] here) [])
+                    case "repeat" (transition (push [:repeats []] here) [])
+                    case _ (ebnf-render-shape (string-join "" ["a " type "'s " key " is not a list"]))
+
+def ebnf-render-array-start [stack]
+  match (top stack)
+    case [:grammar "rules" 1 info] (transition (push [:rules] (ebnf-render-put stack [:grammar "" 2 info])) [])
+    case [:rule "alternatives" at name incremental]
+      match at
+        case 2 (transition (push [:alts :rule 0 []] (ebnf-render-put (ebnf-render-noted stack name) [:rule "" 4 name incremental])) [])
+        case 3 (ebnf-render-refuse (string-join "" ["the rule " (quoted name) " adds alternatives to an earlier rule (=/), which EBNF has no form for"]))
+        case _ (ebnf-render-shape "a rule's alternatives come before its name, or twice")
+    case [:alts owner n texts]
+      match [owner n]
+        case [:rule 0] (transition (push [:alt :rule ""] (ebnf-render-put stack [:alts owner 1 texts])) [])
+        case [:rule k] (transition (push [:alt :rule ""] (ebnf-render-put stack [:alts owner (inc k) texts])) [])
+        case [:group k] (transition (push [:alt :group ""] (ebnf-render-put stack [:alts owner (inc k) texts])) [])
+    case [:element key at pairs] (ebnf-render-element-array stack (top stack))
+    case _ (ebnf-render-shape "a list where none is")
+
+def ebnf-render-array-end [stack]
+  match (top stack)
+    case [:rules] (transition (pop stack) [])
+    case [:alts owner n texts]
+      match n
+        case 0 (ebnf-render-shape "a list of alternatives that is empty")
+        case _
+          let [rest (pop stack)]
+            match owner
+              case :rule
+                match (top rest)
+                  case [:rule key at name incremental] (transition rest [(ebnf-render-rule-text name texts)])
+              case :group
+                match (top rest)
+                  case [:element key at pairs] (transition (ebnf-render-put rest [:element key at (push ["alternatives" texts] pairs)]) [])
+    case [:alt owner text]
+      let [rest (pop stack)]
+        match owner
+          case :rule
+            match (top rest)
+              case [:alts o n texts] (transition (ebnf-render-put rest [:alts o n (push text texts)]) [])
+          case :group
+            match (top rest)
+              case [:alts o n texts] (transition (ebnf-render-put rest [:alts o n (push text texts)]) [])
+    case [:members items]
+      let [rest (pop stack)]
+        match (top rest)
+          case [:element key at pairs] (transition (ebnf-render-put rest [:element key at (push ["members" items] pairs)]) [])
+    case [:repeats items]
+      match (count items)
+        case 0 (ebnf-render-shape "a list of repetitions that is empty")
+        case _
+          let [rest (pop stack)]
+            match (top rest)
+              case [:element key at pairs] (transition (ebnf-render-put rest [:element key at (push ["repeat" items] pairs)]) [])
+    case _ (ebnf-render-shape "a list's end where none is open")
+
+; A key names the member whose value follows.
+def ebnf-render-key [stack name]
+  match (top stack)
+    case [:grammar key at info] (transition (ebnf-render-put stack [:grammar name at info]) [])
+    case [:rule key at n i] (transition (ebnf-render-put stack [:rule name at n i]) [])
+    case [:element key at pairs] (transition (ebnf-render-put stack [:element name at pairs]) [])
+    case [:member key from to] (transition (ebnf-render-put stack [:member name from to]) [])
+    case [:repeat key min max] (transition (ebnf-render-put stack [:repeat name min max]) [])
+    case _ (ebnf-render-shape "a key outside an object")
+
+; A scalar member of an element: its type first, then each member in the
+; schema's order, of the kind the schema gives it.
+def ebnf-render-element-scalar [stack frame value]
+  match frame
+    case [:element "type" 0 []]
+      match (ebnf-render-members value)
+        case missing (ebnf-render-shape (string-join "" ["an element of the type " (quoted (scalar-text csv-options value)) ", which no element has"]))
+        case list (transition (ebnf-render-put stack [:element "" 0 [["type" value]]]) [])
+    case [:element key 0 []] (ebnf-render-shape "an element whose first member is not its type")
+    case [:element key at pairs]
+      let [type (ebnf-render-pair "type" pairs)]
+        match (ebnf-render-place type key)
+          case missing (ebnf-render-shape (string-join "" ["a " type " has no member " key]))
+          case place
+            match (ebnf-render-at-least at place)
+              case true (ebnf-render-shape (string-join "" ["a " type "'s " key " comes after what it precedes, or twice"]))
+              case false
+                match (equal (kind value) (ebnf-render-scalar-kind key))
+                  case false (ebnf-render-shape (string-join "" ["a " type "'s " key " is not of its kind"]))
+                  case true
+                    let [checked (match key (case "value" (ebnf-render-point "a char's value" value)) (case "from" (ebnf-render-point "a range's from" value)) (case "to" (ebnf-render-point "a range's to" value)) (case _ value))]
+                      transition (ebnf-render-put stack [:element "" place (push [key checked] pairs)]) []
+
+def ebnf-render-count [what n]
+  match (kind n)
+    case :number
+      match (ebnf-render-at-least n 0)
+        case true n
+        case false (ebnf-render-shape (string-join "" [what " is below 0"]))
+    case _ (ebnf-render-shape (string-join "" [what " is not a number"]))
+
+def ebnf-render-scalar [stack value]
+  match (top stack)
+    case [:grammar "type" 0 info]
+      match value
+        case "grammar" (transition (ebnf-render-put stack [:grammar "" 1 info]) [])
+        case _ (ebnf-render-shape "the root's type is not grammar")
+    case [:rule "type" 0 n i]
+      match value
+        case "rule" (transition (ebnf-render-put stack [:rule "" 1 n i]) [])
+        case _ (ebnf-render-shape "a rule's type is not rule")
+    case [:rule "name" 1 n i]
+      match (kind value)
+        case :string (transition (ebnf-render-put stack [:rule "" 2 value i]) [])
+        case _ (ebnf-render-shape "a rule's name is not text")
+    case [:rule "incremental" 2 n i]
+      match value
+        case true (transition (ebnf-render-put stack [:rule "" 3 n true]) [])
+        case _ (ebnf-render-shape "a rule's incremental is true where it is written")
+    case [:element key at pairs] (ebnf-render-element-scalar stack (top stack) value)
+    case [:member "from" from to] (transition (ebnf-render-put stack [:member "" (ebnf-render-point "a class member's from" value) to]) [])
+    case [:member "to" from to] (transition (ebnf-render-put stack [:member "" from (ebnf-render-point "a class member's to" value)]) [])
+    case [:repeat "min" -1 max] (transition (ebnf-render-put stack [:repeat "" (ebnf-render-count "a repetition's min" value) max]) [])
+    case [:repeat "max" min -1] (transition (ebnf-render-put stack [:repeat "" min (ebnf-render-count "a repetition's max" value)]) [])
+    case _ (ebnf-render-shape "a value where none is, or a member out of its place")
+
+def ebnf-render-step [stack event]
+  match (count stack)
+    case 0
+      match event
+        case object-start (ebnf-render-object-start stack)
+        case _ (ebnf-render-shape "the root is not an object")
+    case _
+      match (top stack)
+        case :done (fail :protocol-order "the events hold more after the grammar, which a tree's never do")
+        case _
+          match event
+            case object-start (ebnf-render-object-start stack)
+            case object-end (ebnf-render-object-end stack)
+            case array-start (ebnf-render-array-start stack)
+            case array-end (ebnf-render-array-end stack)
+            case (key name) (ebnf-render-key stack name)
+            case (scalar value) (ebnf-render-scalar stack value)
+
+def ebnf-render-finish [stack]
+  match stack
+    case [:done] []
+    case [] (fail :protocol-order "the events hold no value, where a tree's hold one")
+    case _ (fail :protocol-order "the events ended inside a container, which a tree's never do")
+
+; The render: the tree's events in, the ABNF text out, the start rule held
+; to its place.
+def ebnf-render [input]
+  join ""
+    scan-emit [[] [:none]] ebnf-render-start-step ebnf-render-start-finish (events input)
+
+
+; ---- the start rule
+;
+; A grammar's `start` names the rule it starts from, where its notation
+; names one whatever the rules' order (GBNF's root). It comes after the
+; grammar's type and before its rules, and these definitions read it, so
+; the events the render beneath them reads hold none. Where the notation
+; written starts from its first rule (ebnf-render-holds), the start rule
+; is written first: until it arrives the text of the rules before it is
+; held, and written after it; nothing is held when it comes first, or
+; where there is no start. A start naming a rule that never arrives, in a
+; grammar that has rules, is refused at the grammar's end, rather than
+; written as a grammar that starts from another rule; a grammar of no
+; rules starts nowhere, and is written as it is.
+;
+; The state is [stack start]: the render's own stack, and where the start
+; stands: [:none], no start; [:due], its key read and its name due;
+; [:wait name held any], not met yet, `held` the text held back and `any`
+; whether a rule has been; [:in name held], being written; [:met],
+; written.
+
+; The grammar's place among its members, 1 after its type and before its
+; rules, or -1 inside it.
+def ebnf-render-grammar-at [stack]
+  match (count stack)
+    case 1
+      match (top stack)
+        case [:grammar key at] at
+        case [:grammar key at info] at
+        case _ -1
+    case _ -1
+
+; The name of the rule being written, or "" between rules.
+def ebnf-render-current-rule [stack]
+  match (ebnf-render-at-least (count stack) 3)
+    case false ""
+    case true
+      match (ebnf-render-at stack 2)
+        case [:rule key at name incremental] name
+        case _ ""
+
+; The text one event makes, written or held as the start stands.
+def ebnf-render-start-out [stack start out]
+  match start
+    case [:wait name held any]
+      let [rule (ebnf-render-current-rule stack)]
+        match (equal rule name)
+          case true (transition [stack [:in name held]] out)
+          case false
+            let [seen (match rule (case "" any) (case _ true))]
+              match ebnf-render-holds
+                case true (transition [stack [:wait name (push-all out held) seen]] [])
+                case false (transition [stack [:wait name held seen]] out)
+    case [:in name held]
+      match (equal (ebnf-render-current-rule stack) name)
+        case true (transition [stack start] out)
+        case false (transition [stack [:met]] (push-all held out))
+    case _ (transition [stack start] out)
+
+def ebnf-render-start-step [state event]
+  match state
+    case [stack start]
+      match start
+        case [:due]
+          match event
+            case (scalar value)
+              match [(kind value) value]
+                case [:string ""] (ebnf-render-shape "a grammar's start is empty")
+                case [:string name] (transition [(ebnf-render-start-noted stack name) [:wait name [] false]] [])
+                case _ (ebnf-render-shape "a grammar's start is not text")
+            case _ (ebnf-render-shape "a grammar's start has no name")
+        case _
+          match [event (ebnf-render-grammar-at stack)]
+            case [(key "start") 1]
+              match start
+                case [:none] (transition [stack [:due]] [])
+                case _ (ebnf-render-shape "a grammar's start comes twice")
+            case _
+              match (ebnf-render-step stack event)
+                case (transition next out) (ebnf-render-start-out next start out)
+
+def ebnf-render-start-finish [state]
+  match state
+    case [stack start]
+      match start
+        case [:wait name held true] (ebnf-render-refuse (string-join "" ["the grammar starts from the rule " (quoted name) ", which it does not define"]))
+        case [:wait name held false] (ebnf-render-finish stack)
+        case [:due] (ebnf-render-shape "a grammar's start has no name")
+        case _ (ebnf-render-finish stack)
+
+; ---- small helpers on texts and vectors
+
+def ebnf-render-hex-digits ["0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "A" "B" "C" "D" "E" "F"]
+
+def ebnf-render-flat [vv]
   map
     fn [t]
       let [p (split "." t)]
-        get-path (as-path [(number (ebnf-at p 0)) (number (ebnf-at p 1))]) vv
-    filter ebnf-full
+        get-path (as-path [(number (ebnf-render-at p 0)) (number (ebnf-render-at p 1))]) vv
+    filter ebnf-render-full
       split ","
         string-join ","
           map
             fn [j]
-              string-join "," (map (fn [i] (string-join "." [(ebnf-num j) (ebnf-num i)])) (indices (ebnf-at vv j)))
+              string-join "," (map (fn [i] (string-join "." [(ebnf-render-num j) (ebnf-render-num i)])) (indices (ebnf-render-at vv j)))
             indices vv
 
-; Whether the string s is among the strings of v.
-def ebnf-among [s v]
-  ebnf-some (filter (fn [x] (ebnf-same x s)) v)
+def ebnf-render-rest [v]
+  map (fn [i] (ebnf-render-at v i)) (filter (fn [i] (match i (case 0 false) (case _ true))) (indices v))
 
-; The items of v whose key is the first of its kind, in order.
-def ebnf-unique [keyf v]
-  let [ks (map keyf v)]
-    let [prev (ebnf-cat ["\u0000"] (pop (ebnf-cat ks ["\u0000"])))]
-      let [runs (filter (fn [i] (ebnf-not (ebnf-same (ebnf-at ks i) (ebnf-at prev i)))) (indices ks))]
-        map
-          fn [i] (ebnf-at v i)
-          filter
-            fn [i]
-              ebnf-none (filter (fn [j] (match (ebnf-less j i) (case true (ebnf-same (ebnf-at ks j) (ebnf-at ks i))) (case false false))) runs)
-            runs
+def ebnf-render-starts [p s]
+  match s
+    case "" false
+    case _ (ebnf-render-empty (ebnf-render-at (split p s) 0))
 
-def ebnf-plus [a b]
-  length (string-join "" [(repeat a "x") (repeat b "x")])
+def ebnf-render-after [p s]
+  string-join p (ebnf-render-rest (split p s))
 
-def ebnf-ones [n]
-  pop (split "x" (repeat n "x"))
+def ebnf-render-cat [a b]
+  ebnf-render-flat [a b]
 
-def ebnf-even [j]
-  ebnf-some (filter (fn [d] (ebnf-ends d (ebnf-num j))) ["0" "2" "4" "6" "8"])
-
-def ebnf-fail [what]
-  fail :unrepresentable (string-join "" ["the grammar spec cannot be written as EBNF: " what])
-
-; ---- the spec
-
-def ebnf-rec [v]
-  match (kind v)
-    case :record v
-    case _ (record)
-
-def ebnf-vec [v]
-  match (kind v)
-    case :vector (as-vector v)
-    case _ []
-
-def ebnf-str [v]
-  match (kind v)
-    case :string v
-    case _ ""
-
-def ebnf-context [spec]
-  let [o (ebnf-rec (get "options" spec))]
-    record
-      entry :rules (ebnf-rec (get "rule" spec))
-      entry :fixed (ebnf-rec (get-path (as-path ["fixed" "token"]) o))
-      entry :match (ebnf-rec (get-path (as-path ["match" "token"]) o))
-      entry :sets (ebnf-rec (get "tokenSet" o))
-      entry :prov (get-path (as-path ["meta" "provenance"]) spec)
-      entry :start (ebnf-str (get-path (as-path ["rule" "start"]) o))
-
-def ebnf-rule [cx name]
-  get-path (as-path [name]) (get :rules cx)
-
-def ebnf-has [cx name]
-  match (kind (ebnf-rule cx name))
-    case :record true
+def ebnf-render-empty [s]
+  match s
+    case "" true
     case _ false
 
-; A rule's alternates in one phase, the falsy placeholders the engine
-; skips left out.
-def ebnf-open [r]
-  filter (fn [alt] (match (kind alt) (case :record true) (case _ false))) (ebnf-vec (get "open" r))
-
-def ebnf-close [r]
-  filter (fn [alt] (match (kind alt) (case :record true) (case _ false))) (ebnf-vec (get "close" r))
-
-; The tokens an alternate matches: its `s`, a string of token names
-; between spaces or a list of them.
-def ebnf-s [alt]
-  let [s (get "s" alt)]
-    match (kind s)
-      case :string (filter ebnf-full (split " " s))
-      case :vector (map ebnf-str (as-vector s))
-      case _ []
-
-def ebnf-b [alt]
-  match (kind (get "b" alt))
-    case :number (get "b" alt)
-    case _ 0
-
-def ebnf-p [alt]
-  ebnf-str (get "p" alt)
-
-def ebnf-r [alt]
-  ebnf-str (get "r" alt)
-
-def ebnf-a [alt]
-  match (kind (get "a" alt))
-    case :string (get "a" alt)
-    case :missing ""
-    case :null ""
-    case _ "?"
-
-; Whether the compiler made the rule: provenance names every rule it
-; synthesized, and a spec without provenance is read by the names it
-; gives them.
-def ebnf-made [cx name]
-  match (kind (get :prov cx))
-    case :record
-      match (kind (get-path (as-path [name]) (get :prov cx)))
-        case :string true
-        case _ false
-    case _
-      match (ebnf-some (ebnf-rest (split "$" name)))
-        case true (ebnf-split-name name)
-        case false
-          match (ebnf-gen-kind name)
-            case ""
-              match (ebnf-same name (get :start cx))
-                case true (ebnf-wrapper (ebnf-rule cx name))
-                case false false
-            case k (ebnf-helper-shape cx name k)
-
-; The kind of helper a name gives, as the compiler names the helpers it
-; makes, `_gen<n>_<kind>...` with the kind a repetition's, an option's or
-; a group's (`_gen3_star_x`, `_gen4_group`), or "" for any other name: a
-; rule the author wrote may begin with `_gen` too (`_general`).
-def ebnf-gen-kind [name]
-  match (ebnf-starts "_gen" name)
-    case false ""
-    case true
-      let [parts (split "_" (ebnf-after "_gen" name))]
-        match (count parts)
-          case 1 ""
-          case _
-            match (match (ebnf-digits (ebnf-at parts 0)) (case true (ebnf-among (ebnf-at parts 1) ["star" "plus" "opt" "rep" "group"])) (case false false))
-              case true (ebnf-at parts 1)
-              case false ""
-
-; Whether a name is one the compiler gives a rule it splits off another,
-; every part after a `$` one of its own: a dispatcher's alternative
-; (`$alt<i>`), a chain's step (`$step<j>`), a left-factored tail
-; (`$fact<k>`), a probe dispatcher (`$pd<i>`) and its parts (`$probe`,
-; `$with`, `$no`, numbered where the name was taken).
-def ebnf-split-name [name]
-  ebnf-none (filter (fn [p] (ebnf-not (ebnf-split-part p))) (ebnf-rest (split "$" name)))
-
-def ebnf-split-part [p]
-  ebnf-some (filter (fn [k] (ebnf-split-fits k p)) ["alt" "step" "fact" "pd" "probe" "with" "no"])
-
-def ebnf-split-fits [k p]
-  match (ebnf-starts k p)
-    case false false
-    case true
-      match (ebnf-after k p)
-        case "" (ebnf-among k ["probe" "with" "no"])
-        case rest (ebnf-digits rest)
-
-; A rule named as the compiler names a helper, in a spec that names no
-; provenance, is the compiler's where it has the shape the compiler gives
-; that kind, and the author's otherwise: a repetition's loop has its
-; guarded entry (`{c: {n.rep: 0}, r: <self>}`); a plus is its item and the
-; loop after it; an option one element and the empty alternative; a
-; counted repetition copies of one element, and the option or the loop
-; after them; a group any alternatives.
-def ebnf-helper-shape [cx name k]
-  match k
-    case "group" true
-    case "star" (ebnf-some (filter (fn [alt] (ebnf-loop-entry name alt)) (ebnf-open (ebnf-rule cx name))))
-    case _
-      let [alts (ebnf-raw-alts cx name)]
-        match k
-          case "plus" (ebnf-plus-shape alts)
-          case "opt" (ebnf-opt-shape alts)
-          case _ (ebnf-rep-shape alts)
-
-def ebnf-loop-entry [name alt]
-  match (ebnf-same (ebnf-r alt) name)
-    case false false
-    case true
-      let [c (get "c" alt)]
-        match (kind c)
-          case :record (ebnf-loop-value c "n.rep" [0])
-          case _ false
-
-def ebnf-plus-shape [alts]
-  match (count alts)
-    case 1
-      let [seq (ebnf-vec (ebnf-at alts 0))]
-        match (count seq)
-          case 2 (ebnf-same (ebnf-helper-ref (ebnf-at seq 1)) "star")
-          case _ false
-    case _ false
-
-def ebnf-opt-shape [alts]
-  match (count alts)
-    case 2
-      let [counts (map count alts)]
-        match (ebnf-among "0" (map ebnf-num counts))
-          case true (ebnf-among "1" (map ebnf-num counts))
-          case false false
-    case _ false
-
-def ebnf-rep-shape [alts]
-  match (count alts)
-    case 1
-      let [seq (ebnf-vec (ebnf-at alts 0))]
-        match (count seq)
-          case 0 true
-          case _
-            let [lead (match (ebnf-among (ebnf-helper-ref (top seq)) ["star" "opt"]) (case true (pop seq)) (case false seq))]
-              let [keys (map ebnf-el-name lead)]
-                ebnf-none (filter (fn [key] (match key (case "" true) (case _ (ebnf-not (ebnf-same key (ebnf-at keys 0)))))) keys)
-    case _ false
-
-; The kind of helper an element references by name, or "".
-def ebnf-helper-ref [el]
-  match (get :k el)
-    case :ref (ebnf-gen-kind (get :name el))
-    case _ ""
-
-; A token or a reference by its name, any other element "".
-def ebnf-el-name [el]
-  match (get :k el)
-    case :tok (string-join "" ["#" (get :name el)])
-    case :ref (string-join "" ["@" (get :name el)])
-    case _ ""
-
-; The start wrapper the compiler adds, which `options.rule.start` names:
-; one open alternate that consumes nothing and pushes the grammar's start
-; rule, and the end of the source, and nothing else, to close it.
-def ebnf-wrapper [r]
-  let [o (ebnf-open r)]
-    match (count o)
-      case 1
-        let [a (ebnf-at o 0)]
-          match (match (ebnf-some (ebnf-s a)) (case true false) (case false (ebnf-full (ebnf-p a))))
-            case false false
-            case true
-              let [c (ebnf-close r)]
-                match (count c)
-                  case 0 false
-                  case _ (ebnf-none (filter (fn [x] (ebnf-not (ebnf-wrapper-end x))) c))
-      case _ false
-
-; A close alternate that matches the end of the source and goes nowhere.
-def ebnf-wrapper-end [alt]
-  match (ebnf-same (string-join " " (ebnf-s alt)) "#ZZ")
-    case false false
-    case true (ebnf-empty (ebnf-target alt))
-
-; Every grammar text compiles to a start wrapper around its start rule,
-; and the wrapper's close lets the end of the source come after what the
-; lexer skips (`ab ` where the grammar is `ab`). So the rule
-; `options.rule.start` names must be that wrapper: a spec that starts at
-; another rule, or at a wrapper without its close, would come back
-; accepting what it refuses.
-def ebnf-check-start [cx]
-  match (ebnf-wrapper (ebnf-rule cx (get :start cx)))
-    case true true
-    case false (ebnf-fail (string-join "" ["the start rule " (get :start cx) " is not the start wrapper every grammar text compiles to (one open alternate that matches nothing and pushes a rule, closed by the end of the source alone)"]))
-
-; ---- what the spec may hold
-
-; Every alternate is one the compiler's tree-building grammars are made
-; of: the tokens it matches and gives back (`s`, `b`), the rule it pushes
-; or replaces itself with (`p`, `r`), the tree builders (`a`, `k`), group
-; tags, marks and per-rule scratch (`g`, `m`, `u`), and, in a repeat loop
-; alone, the loop's guard and counter (`c`, `n`). Anything more is a
-; construct the notation does not write: an error generator (`e`), an
-; alternate modifier (`h`), a function in place of a rule or a count, an
-; action other than the tree builders, another condition or counter.
-def ebnf-alt-keys ["s" "b" "p" "r" "a" "c" "n" "k" "g" "m" "u"]
-
-def ebnf-key-text [key]
-  match key
-    case "e" "e (an error generator)"
-    case "h" "h (an alternate modifier)"
-    case _ key
-
-def ebnf-check-alt [cx name alt]
-  let [extra (filter (fn [key] (match (ebnf-among key ebnf-alt-keys) (case true false) (case false (ebnf-given (get key alt))))) (keys alt))]
-    match (count extra)
-      case 0 (ebnf-check-parts cx name alt)
-      case _ (ebnf-fail (string-join "" ["rule " name " has an alternate carrying " (string-join ", " (map ebnf-key-text extra)) ", which is not written"]))
-
-def ebnf-check-parts [cx name alt]
-  let [a (ebnf-a alt)]
-    match (ebnf-among a ["" "@node$" "@capture$" "@bubble$" "@fold$"])
-      case false
-        match (ebnf-starts "@probe" (ebnf-action-text alt))
-          case true (ebnf-fail (string-join "" ["rule " name " is the probe dispatcher the compiler makes for an optional prefix ([ X D ] Y), which is not read back"]))
-          case false (ebnf-fail (string-join "" ["rule " name " carries an action (" (ebnf-action-text alt) "), which is not written"]))
-      case true
-        let [tokens (ebnf-check-s name (get "s" alt))]
-          let [next (count (map (fn [key] (ebnf-check-next name key (get key alt))) ["p" "r"]))]
-            let [back (ebnf-check-back name (get "b" alt))]
-              ebnf-check-loop cx name alt
-
-; The tokens: a string of names between spaces, or a list of names, one
-; place each; a place holding a set of tokens (names between spaces, or a
-; list) chooses among them, which the render does not read back.
-def ebnf-check-s [name s]
-  match (kind s)
-    case :missing true
-    case :null true
-    case :string true
-    case :vector
-      match (ebnf-none (filter (fn [t] (match (kind t) (case :string (ebnf-some (ebnf-rest (split " " t)))) (case _ true))) (as-vector s)))
-        case true true
-        case false (ebnf-fail (string-join "" ["rule " name " has an alternate whose s holds, at one place, a set of tokens or something other than a token's name, which is not written"]))
-    case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose s is not tokens, which is not written"]))
-
-; The rule an alternate pushes or replaces itself with: a name, or none;
-; a function reference (`@name`) chooses at run time and is not written.
-def ebnf-check-next [name key v]
-  match (kind v)
-    case :missing true
-    case :null true
-    case :boolean (match v (case false true) (case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose " key " is not a rule, which is not written"]))))
-    case :string
-      match (ebnf-starts "@" v)
-        case true (ebnf-fail (string-join "" ["rule " name " has an alternate whose " key " is the function reference " v ", which is not written"]))
-        case false true
-    case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose " key " is not a rule, which is not written"]))
-
-def ebnf-check-back [name v]
-  match (kind v)
-    case :missing true
-    case :null true
-    case :number true
-    case :boolean (match v (case false true) (case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose b is not a count, which is not written"]))))
-    case _ (ebnf-fail (string-join "" ["rule " name " has an alternate whose b is not a count (" (ebnf-str v) "), which is not written"]))
-
-; A repeat loop's guard (`c: {n.rep: 0}`) and counter (`n: {rep: 0}` or
-; `{rep: 1}`), in the loop the compiler makes for a repetition and the
-; steps of its item, and nowhere else.
-def ebnf-loop-rule [cx name]
-  ebnf-same (ebnf-helper-kind cx (ebnf-at (split "$" name) 0)) "star"
-
-def ebnf-check-loop [cx name alt]
-  let [c (get "c" alt)]
-    let [n (get "n" alt)]
-      match (match (ebnf-given c) (case true true) (case false (ebnf-given n)))
-        case false true
-        case true
-          match (ebnf-loop-rule cx name)
-            case false (ebnf-fail (string-join "" ["rule " name " carries a condition or a counter outside a repetition's loop, which is not written"]))
-            case true
-              match (match (ebnf-given c) (case false true) (case true (match (kind c) (case :record (ebnf-loop-value c "n.rep" [0])) (case _ false))))
-                case false (ebnf-fail (string-join "" ["rule " name " carries a condition other than its loop's, which is not written"]))
-                case true
-                  match (match (ebnf-given n) (case false true) (case true (match (kind n) (case :record (ebnf-loop-value n "rep" [0 1])) (case _ false))))
-                    case false (ebnf-fail (string-join "" ["rule " name " carries a counter other than its loop's, which is not written"]))
-                    case true true
-
-; Whether an alternate gives a field: the engine reads a field that is
-; missing, null or false as one it does not give.
-def ebnf-given [v]
-  match (kind v)
-    case :missing false
-    case :null false
-    case :boolean (match v (case false false) (case _ true))
+def ebnf-render-full [s]
+  match s
+    case "" false
     case _ true
 
-def ebnf-loop-value [rec key allowed]
-  match (keys rec)
-    case [only]
-      match (ebnf-same only key)
-        case false false
-        case true
-          let [v (get-path (as-path [key]) rec)]
-            ebnf-some (filter (fn [x] (match (compare v x) (case :equal true) (case _ false))) allowed)
-    case _ false
-
-def ebnf-action-text [alt]
-  match (kind (get "a" alt))
-    case :string (get "a" alt)
-    case :vector (string-join " " (map ebnf-str (as-vector (get "a" alt))))
-    case _ "a function"
-
-; A rule's phases: a list of alternates each, or none; the form that edits
-; a rule already installed (`{alts, inject}`) is not written.
-def ebnf-check-phase [name phase v]
-  match (kind v)
-    case :missing true
-    case :null true
-    case :vector true
-    case :record (ebnf-fail (string-join "" ["rule " name " gives its " phase " alternates as alts and an inject, which edits a rule already installed and is not written"]))
-    case _ (ebnf-fail (string-join "" ["rule " name " gives its " phase " alternates in a form that is not a list, which is not written"]))
-
-def ebnf-check-rule [cx name]
-  let [r (ebnf-rule cx name)]
-    match (kind r)
-      case :record
-        let [phases (count (map (fn [phase] (ebnf-check-phase name phase (get phase r))) ["open" "close"]))]
-          match (count (ebnf-open r))
-            case 0 (ebnf-fail (string-join "" ["rule " name " has no alternate to open with, which no grammar text writes"]))
-            case _ (count (map (fn [alt] (ebnf-check-alt cx name alt)) (ebnf-cat (ebnf-open r) (ebnf-close r))))
-      case :null (ebnf-fail (string-join "" ["rule " name " is removed, which is not written"]))
-      case _ (ebnf-fail (string-join "" ["rule " name " is not a rule's alternates, which is not written"]))
-
-; A spec serialized by Go writes its keys in name order and its match
-; tokens' order in a list of its own (`options.match.tokenOrder`): the
-; rules' order, which decides the order the compiler gives the tokens
-; again, is lost, and with it which of two tokens that both match wins.
-def ebnf-check-order [spec]
-  let [order (get-path (as-path ["options" "match" "tokenOrder"]) spec)]
-    match (kind order)
-      case :vector
-        match (ebnf-less (count (as-vector order)) 2)
-          case true true
-          case false (ebnf-fail "it gives its match tokens' order as a list of its own (tokenOrder, Go's serialization, whose keys are in name order), and the order of the rules, which their precedence follows, is lost")
-      case _ true
-
-def ebnf-check [spec cx]
-  match (get "clear" spec)
-    case true (ebnf-fail "it clears the grammar it is installed on, which is not written")
-    case _
-      let [order (ebnf-check-order spec)]
-        let [start (ebnf-check-start cx)]
-          let [rules (count (map (fn [name] (ebnf-check-rule cx name)) (keys (get :rules cx))))]
-            ebnf-check-sets cx (ebnf-used cx)
-
-; ---- tokens
-
-def ebnf-bare [t]
-  ebnf-after "#" t
-
-def ebnf-lit [text cs]
-  record
-    entry :k :lit
-    entry :text text
-    entry :cs cs
-
-def ebnf-class [pat flags]
-  record
-    entry :k :class
-    entry :pat pat
-    entry :flags flags
-
-; A pattern's escapes taken back off: an escaped backslash is a pair, any
-; other escape one backslash before the character it escapes.
-def ebnf-unescape [s]
-  string-join "\\" (map (fn [piece] (string-join "" (split "\\" piece))) (split "\\\\" s))
-
-; A match token's source, `@~/^.../flags`: a class, or a case-folding
-; literal.
-def ebnf-match-token [t m]
-  let [parts (split "/" m)]
-    let [flags (top parts)]
-      let [src (string-join "/" (pop (ebnf-rest parts)))]
-        match (ebnf-starts "^" src)
-          case false (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which no EBNF terminal matches"]))
-          case true
-            let [body (ebnf-after "^" src)]
-              match (ebnf-starts "[" body)
-                case true
-                  match (ebnf-class-pattern body)
-                    case false (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which is not one class the render reads, and no EBNF terminal matches it"]))
-                    case true
-                      match (ebnf-flags-fit body flags)
-                        case true (ebnf-class body flags)
-                        case false (ebnf-fail (string-join "" ["the token " t " is the class " m ", whose flags (" (match flags (case "" "none") (case _ flags)) ") change what it matches, and no EBNF terminal matches it"]))
-                case false
-                  match flags
-                    case "i"
-                      match (ebnf-escaped-literal body)
-                        case true (ebnf-lit (ebnf-unescape body) false)
-                        case false (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which is not a literal the render reads, and no EBNF terminal matches it"]))
-                    case _ (ebnf-fail (string-join "" ["the token " t " is the pattern " m ", which no EBNF terminal matches"]))
-
-; Whether a pattern's body is one class as the compiler writes one:
-; `[`, an optional `^`, members each a `\uXXXX` or `\u{X...}` escape, alone
-; or the low end of a range, and `]` ending it; or `[\s\S]`, which
-; another notation's `.` compiles to.
-def ebnf-class-pattern [body]
-  match body
-    case "[\\s\\S]" true
-    case _
-      match (ebnf-ends "]" body)
-        case false false
-        case true
-          let [inner (ebnf-before "]" (ebnf-after "[" body))]
-            match (ebnf-some (filter (fn [c] (ebnf-some (ebnf-rest (split c inner)))) ["[" "]"]))
-              case true false
-              case false
-                let [pieces (split "\\u" (match (ebnf-starts "^" inner) (case true (ebnf-after "^" inner)) (case false inner)))]
-                  match (ebnf-empty (ebnf-at pieces 0))
-                    case false false
-                    case true
-                      let [members (ebnf-rest pieces)]
-                        match (count members)
-                          case 0 false
-                          case _
-                            match (ebnf-ends "-" (top members))
-                              case true false
-                              case false (ebnf-none (filter (fn [m] (ebnf-not (ebnf-member-piece m))) members))
-
-def ebnf-member-piece [piece]
-  let [core (match (ebnf-ends "-" piece) (case true (ebnf-before "-" piece)) (case false piece))]
-    match (ebnf-starts "{" core)
-      case true
-        match (ebnf-ends "}" core)
-          case false false
-          case true
-            let [h (ebnf-before "}" (ebnf-after "{" core))]
-              match (ebnf-among (ebnf-num (length h)) ["1" "2" "3" "4" "5" "6"])
-                case false false
-                case true (ebnf-hex-only h)
-      case false
-        match (length core)
-          case 4 (ebnf-hex-only core)
-          case _ false
-
-def ebnf-hex-only [h]
-  match h
-    case "" false
-    case _ (chars-within [[48 57] [65 70] [97 102]] h)
-
-; Whether a pattern's body is a literal as the compiler escapes one: every
-; character a pattern reads otherwise (`\ ^ $ . * + ? ( ) [ ] { } |`)
-; after a backslash, and a backslash before nothing else.
-def ebnf-meta-chars ["^" "$" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|"]
-
-def ebnf-escaped-literal [body]
-  let [rest (ebnf-strip-escapes ebnf-strip-escapes ebnf-meta-chars (string-join "" (split "\\\\" body)))]
-    match (ebnf-some (ebnf-rest (split "\\" rest)))
-      case true false
-      case false (ebnf-none (filter (fn [c] (ebnf-some (ebnf-rest (split c rest)))) ebnf-meta-chars))
-
-def ebnf-strip-escapes [self cs s]
-  match (count cs)
-    case 0 s
-    case _ (self self (pop cs) (string-join "" (split (string-join "" ["\\" (top cs)]) s)))
-
-; A token set's class, read back from its name, which the compiler gives
-; the class it lays over the atoms (`rx_` and the pattern, each character
-; that is not a letter or a digit an underscore, in capitals). Each member
-; of the pattern is a `\u` escape, `\uXXXX` or `\u{X...}`, alone or the
-; low end of a range; the name keeps their digits and order.
-def ebnf-hex-lower [h]
-  string-join "a" (split "A" (string-join "b" (split "B" (string-join "c" (split "C" (string-join "d" (split "D" (string-join "e" (split "E" (string-join "f" (split "F" h)))))))))))
-
-def ebnf-hex-upper [h]
-  string-join "A" (split "a" (string-join "B" (split "b" (string-join "C" (split "c" (string-join "D" (split "d" (string-join "E" (split "e" (string-join "F" (split "f" h)))))))))))
-
-def ebnf-set-member [piece]
-  let [parts (split "_" piece)]
-    match (ebnf-empty (ebnf-at parts 0))
-      case true
-        record
-          entry :text (string-join "" ["\\u{" (ebnf-hex-lower (ebnf-at parts 1)) "}"])
-          entry :braced true
-          entry :range (match (count parts) (case 4 true) (case _ false))
-      case false
-        record
-          entry :text (string-join "" ["\\u" (ebnf-hex-lower (ebnf-at parts 0))])
-          entry :braced false
-          entry :range (match (count parts) (case 2 true) (case _ false))
-
-def ebnf-set-token [t]
-  let [rest (ebnf-after "RX_" (ebnf-bare t))]
-    match rest
-      case "__S_S" (ebnf-class "[\\s\\S]" "u")
-      case _
-        let [pieces (split "_U" rest)]
-          let [members (map ebnf-set-member (ebnf-rest pieces))]
-            let [negated (ebnf-same (ebnf-at pieces 0) "__")]
-              let [body (string-join "" (map (fn [m] (string-join "" [(get :text m) (match (get :range m) (case true "-") (case false ""))])) members))]
-                let [pat (string-join "" ["[" (match negated (case true "^") (case false "")) body "]"])]
-                  match (ebnf-same (ebnf-class-name pat) (ebnf-bare t))
-                    case false (ebnf-fail (string-join "" ["the token set " t " names no class the render can read back"]))
-                    case true
-                      match negated
-                        case true (ebnf-class pat "u")
-                        case false (ebnf-class pat (match (ebnf-some (filter (fn [m] (get :braced m)) members)) (case true "u") (case false "")))
-
-; The name the compiler gives a class's token: `rx_` and its pattern, every
-; character but a letter or a digit an underscore, in capitals, with the
-; underscores at the end taken off.
-def ebnf-class-name [pat]
-  let [u (ebnf-hex-upper (string-join "U" (split "u" (string-join "S" (split "s" pat)))))]
-    let [n (string-join "_" (split "[" (string-join "_" (split "]" (string-join "_" (split "^" (string-join "_" (split "-" (string-join "_" (split "\\" (string-join "_" (split "{" (string-join "_" (split "}" u))))))))))))))]
-      ebnf-trim-end (string-join "" ["RX_" n])
-
-def ebnf-trim-end [s]
-  match (ebnf-ends "_" s)
-    case true (ebnf-trim-end-once (ebnf-before "_" s))
-    case false s
-
-def ebnf-trim-end-once [s]
-  match (ebnf-ends "_" s)
-    case true (ebnf-before "_" s)
-    case false s
-
-; ---- code points and the ranges a class holds
-
-; A code point, from its one to six hexadecimal digits in either case, as
-; three numbers, its bytes from the highest, each the place of its two
-; digits among `ebnf-hex-pairs`: code points are ordered as these are.
-def ebnf-cp [h]
-  let [x (ebnf-six (ebnf-hex-upper h))]
-    let [high (ebnf-pair-start x)]
-      let [rest (ebnf-after high x)]
-        vector (ebnf-pair-index high) (ebnf-pair-index (ebnf-pair-start rest)) (ebnf-pair-index (ebnf-pair-end rest))
-
-def ebnf-six [h]
-  string-join "" [(match (length h) (case 1 "00000") (case 2 "0000") (case 3 "000") (case 4 "00") (case 5 "0") (case _ "")) h]
-
-def ebnf-pair-start [x]
-  ebnf-at (filter (fn [p] (ebnf-starts p x)) ebnf-hex-pairs) 0
-
-def ebnf-pair-end [x]
-  ebnf-at (filter (fn [p] (ebnf-ends p x)) ebnf-hex-pairs) 0
-
-def ebnf-pair-index [p]
-  ebnf-at (filter (fn [i] (ebnf-same (ebnf-at ebnf-hex-pairs i) p)) (indices ebnf-hex-pairs)) 0
-
-def ebnf-cp-order [a b]
-  match (compare (ebnf-at a 0) (ebnf-at b 0))
-    case :equal
-      match (compare (ebnf-at a 1) (ebnf-at b 1))
-        case :equal (compare (ebnf-at a 2) (ebnf-at b 2))
-        case other other
-    case other other
-
-def ebnf-cp-before [a b]
-  match (ebnf-cp-order a b)
-    case :less true
-    case _ false
-
-def ebnf-cp-is [a b]
-  match (ebnf-cp-order a b)
-    case :equal true
-    case _ false
-
-; The code point after one: its low byte one more, carried into the bytes
-; above it.
-def ebnf-cp-next [c]
-  match (ebnf-at c 2)
-    case 255
-      match (ebnf-at c 1)
-        case 255 (vector (ebnf-plus (ebnf-at c 0) 1) 0 0)
-        case _ (vector (ebnf-at c 0) (ebnf-plus (ebnf-at c 1) 1) 0)
-    case _ (vector (ebnf-at c 0) (ebnf-at c 1) (ebnf-plus (ebnf-at c 2) 1))
-
-def ebnf-cp-max [cps]
-  ebnf-at (filter (fn [c] (ebnf-none (filter (fn [d] (ebnf-cp-before c d)) cps))) cps) 0
-
-def ebnf-span [lo hi]
-  record
-    entry :lo lo
-    entry :hi hi
-
-; The members of a class's pattern, read as `ebnf-class-pattern` admits
-; them: each a range, from its low end's digits to its high end's (a
-; character alone is a range of one); `[\s\S]` every code point. A
-; negated class's are the ones it excludes.
-def ebnf-class-hex-spans [body]
-  match body
-    case "[\\s\\S]" [(ebnf-span "0" "10FFFF")]
-    case _
-      let [inner (ebnf-before "]" (ebnf-after "[" body))]
-        let [pieces (ebnf-rest (split "\\u" (match (ebnf-starts "^" inner) (case true (ebnf-after "^" inner)) (case false inner))))]
-          let [lows (map (fn [p] (ebnf-ends "-" p)) pieces)]
-            let [ends (ebnf-cat [false] lows)]
-              map
-                fn [i]
-                  let [lo (ebnf-piece-hex (ebnf-at pieces i))]
-                    match (ebnf-at lows i)
-                      case true (ebnf-span lo (ebnf-piece-hex (ebnf-at pieces (ebnf-plus i 1))))
-                      case false (ebnf-span lo lo)
-                filter (fn [i] (ebnf-not (ebnf-at ends i))) (indices pieces)
-
-def ebnf-piece-hex [p]
-  let [core (match (ebnf-ends "-" p) (case true (ebnf-before "-" p)) (case false p))]
-    match (ebnf-starts "{" core)
-      case true (ebnf-before "}" (ebnf-after "{" core))
-      case false core
-
-def ebnf-class-spans [body]
-  map (fn [s] (ebnf-span (ebnf-cp (get :lo s)) (ebnf-cp (get :hi s)))) (ebnf-class-hex-spans body)
-
-; Ranges sorted by their low ends and merged where they overlap or meet:
-; two lists of ranges hold the same code points when these are the same.
-def ebnf-spans-merged [spans]
-  let [sorted (ebnf-spans-sorted spans)]
-    let [starts (filter (fn [i] (ebnf-none (filter (fn [j] (match (ebnf-less j i) (case true (ebnf-not (ebnf-cp-before (ebnf-cp-next (get :hi (ebnf-at sorted j))) (get :lo (ebnf-at sorted i))))) (case false false))) (indices sorted)))) (indices sorted))]
-      map (fn [k] (ebnf-block-span sorted starts k)) (indices starts)
-
-def ebnf-block-span [sorted starts k]
-  let [from (ebnf-at starts k)]
-    let [members (filter (fn [i] (match (ebnf-less i from) (case true false) (case false (ebnf-before-start starts k i)))) (indices sorted))]
-      ebnf-span (get :lo (ebnf-at sorted from)) (ebnf-cp-max (map (fn [i] (get :hi (ebnf-at sorted i))) members))
-
-def ebnf-before-start [starts k i]
-  match (ebnf-less (ebnf-plus k 1) (count starts))
-    case true (ebnf-less i (ebnf-at starts (ebnf-plus k 1)))
-    case false true
-
-def ebnf-spans-sorted [spans]
-  let [ranks (map (fn [i] (count (filter (fn [j] (match (ebnf-cp-order (get :lo (ebnf-at spans j)) (get :lo (ebnf-at spans i))) (case :less true) (case :equal (ebnf-less j i)) (case _ false))) (indices spans)))) (indices spans))]
-    map (fn [k] (ebnf-at spans (ebnf-at (filter (fn [i] (match (compare (ebnf-at ranks i) k) (case :equal true) (case _ false))) (indices spans)) 0))) (indices spans)
-
-def ebnf-spans-same [a b]
-  match (compare (count a) (count b))
-    case :equal (ebnf-none (filter (fn [i] (match (ebnf-cp-is (get :lo (ebnf-at a i)) (get :lo (ebnf-at b i))) (case true (ebnf-not (ebnf-cp-is (get :hi (ebnf-at a i)) (get :hi (ebnf-at b i))))) (case false true))) (indices a)))
-    case _ false
-
-; Whether two lists of ranges hold every code point between them, each
-; once: a negated class's ranges and the ranges it matches.
-def ebnf-spans-tile [a b]
-  let [all (ebnf-spans-sorted (ebnf-cat (ebnf-spans-merged a) (ebnf-spans-merged b)))]
-    match (count all)
-      case 0 false
-      case _
-        match (match (ebnf-cp-is (get :lo (ebnf-at all 0)) (ebnf-cp "0")) (case true (ebnf-cp-is (get :hi (top all)) (ebnf-cp "10FFFF"))) (case false false))
-          case false false
-          case true
-            let [nexts (ebnf-rest all)]
-              ebnf-none (filter (fn [i] (ebnf-not (ebnf-cp-is (get :lo (ebnf-at nexts i)) (ebnf-cp-next (get :hi (ebnf-at all i)))))) (indices nexts))
-
-; Whether a class's flags are the ones it is matched with once its text is
-; written and compiled back. Every compiler here gives `u` to a class that
-; is negated, holds a character past U+FFFF or is `[\s\S]`, and to no
-; other. Without `u` such a class matches one UTF-16 code unit, half of a
-; character past U+FFFF, and with it one code point. A class of other
-; characters matches the same either way, unless it holds a surrogate,
-; which `u` matches only where it stands alone.
-def ebnf-flags-fit [body flags]
-  match (ebnf-wants-u body)
-    case true (ebnf-same flags "u")
-    case false
-      match (ebnf-holds-surrogate body)
-        case true (ebnf-empty flags)
-        case false (ebnf-among flags ["" "u"])
-
-def ebnf-wants-u [body]
-  match body
-    case "[\\s\\S]" true
-    case _
-      match (ebnf-starts "[^" body)
-        case true true
-        case false (ebnf-some (ebnf-rest (split "\\u{" body)))
-
-; A class none of whose members is past U+FFFF holds a surrogate where a
-; range's low end is not above U+DFFF and its high end not below U+D800.
-def ebnf-holds-surrogate [body]
-  ebnf-some (filter (fn [s] (match (ebnf-hex-from (get :lo s) ["E" "F"]) (case true false) (case false (ebnf-hex-from (get :hi s) ["D8" "D9" "DA" "DB" "DC" "DD" "DE" "DF" "E" "F"])))) (ebnf-class-hex-spans body))
-
-def ebnf-hex-from [h prefixes]
-  let [x (ebnf-hex-upper h)]
-    match (length x)
-      case 4 (ebnf-some (filter (fn [p] (ebnf-starts p x)) prefixes))
-      case _ false
-
-; A token set is the class its name gives when the tokens it lays over
-; that class are the class: their ranges, merged, are the class's ranges,
-; or, for a negated class, every code point the class does not exclude.
-; The compiler lays a contested class over the atoms of a partition, each
-; a token of its own, and names the set for the class; the render writes
-; the class the name gives, so a set whose tokens match anything else is
-; refused.
-def ebnf-check-sets [cx used]
-  count (map (fn [k] (ebnf-check-set cx (string-join "" ["#" k]))) (filter (fn [k] (match (ebnf-starts "RX_" k) (case true (ebnf-some (ebnf-rest (split (string-join "" [" #" k " "]) used)))) (case false false))) (keys (get :sets cx))))
-
-def ebnf-check-set [cx t]
-  let [cls (ebnf-set-token t)]
-    let [pat (get :pat cls)]
-      let [spans (ebnf-flat (map (fn [m] (ebnf-member-spans cx t m)) (ebnf-vec (get-path (as-path [(ebnf-bare t)]) (get :sets cx)))))]
-        let [own (ebnf-class-spans pat)]
-          match (match (ebnf-starts "[^" pat) (case true (ebnf-spans-tile own spans)) (case false (ebnf-spans-same (ebnf-spans-merged own) (ebnf-spans-merged spans))))
-            case true true
-            case false (ebnf-fail (string-join "" ["the token set " t " lays tokens over its class " pat " that match other characters than the class does, and the render writes the class the set's name gives"]))
-
-def ebnf-member-spans [cx t m]
-  let [src (match (kind m) (case :string (ebnf-str (get-path (as-path [m]) (get :match cx)))) (case _ ""))]
-    let [body (ebnf-after "^" (string-join "/" (pop (ebnf-rest (split "/" src)))))]
-      match (match (ebnf-starts "@" src) (case true (match (ebnf-class-pattern body) (case true (match (ebnf-starts "[^" body) (case true false) (case false (ebnf-flags-fit body (top (split "/" src)))))) (case false false))) (case false false))
-        case true (ebnf-class-spans body)
-        case false (ebnf-fail (string-join "" ["the token set " t " holds " (ebnf-str m) ", which is not one class the render reads"]))
-
-def ebnf-engine-token [t]
-  match t
-    case "#TX" (record (entry :k :engine) (entry :name "TX"))
-    case "#NR" (record (entry :k :engine) (entry :name "NR"))
-    case "#ST" (record (entry :k :engine) (entry :name "ST"))
-    case "#VL" (record (entry :k :engine) (entry :name "VL"))
-    case _ (ebnf-fail (string-join "" ["the token " t " is defined nowhere in the spec"]))
-
-def ebnf-token [cx t]
-  let [f (get-path (as-path [t]) (get :fixed cx))]
-    match (kind f)
-      case :string (ebnf-lit f true)
-      case _
-        let [m (get-path (as-path [t]) (get :match cx))]
-          match (kind m)
-            case :string (ebnf-match-token t m)
-            case _
-              match (kind (get-path (as-path [(ebnf-bare t)]) (get :sets cx)))
-                case :vector (ebnf-set-token t)
-                case _ (ebnf-engine-token t)
-
-; ---- reading a rule's alternatives
-
-; An element of an alternative as the spec holds it: a token, or a
-; reference to a rule (the compiler's helpers among them).
-def ebnf-tok-el [t]
-  record
-    entry :k :tok
-    entry :name t
-
-def ebnf-ref-el [n]
-  record
-    entry :k :ref
-    entry :name n
-
-; The tokens an alternate consumes, and the rule it hands over to.
-def ebnf-consumed [alt]
-  let [s (ebnf-s alt)]
-    let [b (ebnf-b alt)]
-      ebnf-take (count (filter (fn [j] (ebnf-not (ebnf-less j b))) (indices s))) s
-
-def ebnf-target [alt]
-  match (ebnf-p alt)
-    case "" (ebnf-r alt)
-    case p p
-
-def ebnf-entry-els [alt]
-  let [toks (map ebnf-tok-el (ebnf-consumed alt))]
-    match (ebnf-target alt)
-      case "" toks
-      case to (push (ebnf-ref-el to) toks)
-
-def ebnf-entry-key [alt]
-  string-join "" [(string-join " " (ebnf-consumed alt)) "|" (ebnf-target alt)]
-
-; A rule whose alternatives are each one segment: its open alternates,
-; each read as what it consumes and pushes, a dispatch's lookahead copies
-; of one alternative read as one; the empty alternative first, which the
-; compiler puts last wherever it stood, so that either place compiles
-; back the same. An alternate that consumes nothing and pushes nothing is
-; the empty alternative, or a guard that ends it on what may follow; two
-; or more bare ones (`a ::= | `) are as many empty alternatives.
-def ebnf-simple-alts [r]
-  let [alts (ebnf-flat (map (fn [alt] (map (fn [i] (ebnf-entry-els alt)) (indices (ebnf-ones (ebnf-copies (ebnf-open r) alt))))) (ebnf-unique ebnf-entry-key (ebnf-open r))))]
-    let [bare (count (filter ebnf-bare-empty (ebnf-open r)))]
-      let [empties (match (ebnf-some (filter ebnf-none alts)) (case false []) (case true (map (fn [i] []) (indices (ebnf-ones (match (ebnf-less bare 2) (case true 1) (case false bare)))))))]
-        ebnf-cat empties (ebnf-number-order (filter ebnf-some alts))
-
-; How many times an alternative stands among the open alternates: the
-; lookahead copies a dispatch makes of one alternative consume and push the
-; same and look ahead at different tokens, and are one; alternates alike
-; in everything are as many alternatives as there are of them.
-def ebnf-copies [open alt]
-  let [group (filter (fn [a] (ebnf-same (ebnf-entry-key a) (ebnf-entry-key alt))) open)]
-    let [counts (map (fn [a] (count (filter (fn [b] (ebnf-same (ebnf-whole-key b) (ebnf-whole-key a))) group))) group)]
-      ebnf-at (filter (fn [c] (ebnf-none (filter (fn [d] (ebnf-less c d)) counts))) counts) 0
-
-def ebnf-whole-key [alt]
-  string-join "" [(string-join " " (ebnf-s alt)) "|" (ebnf-num (ebnf-b alt)) "|" (ebnf-target alt)]
-
-def ebnf-bare-empty [alt]
-  match (ebnf-some (ebnf-s alt))
-    case true false
-    case false (ebnf-empty (ebnf-target alt))
-
-; The compiler reorders a rule's alternatives to tell them apart (a
-; longer lookahead first, a keyword ahead of a class that takes it), and
-; numbers the helpers it makes for them, in the order the alternatives
-; were written, before it does. So the alternatives that push a helper
-; are put back in the order of the helpers' numbers, among their own
-; places; the others keep theirs.
-def ebnf-alt-number [alt]
-  match (count alt)
-    case 0 -1
-    case _
-      let [last (top alt)]
-        match (get :k last)
-          case :ref
-            match (ebnf-starts "_gen" (get :name last))
-              case true
-                let [d (ebnf-at (split "_" (ebnf-after "_gen" (get :name last))) 0)]
-                  match (ebnf-digits d)
-                    case true (number d)
-                    case false -1
-              case false -1
-          case _ -1
-
-def ebnf-number-order [alts]
-  let [nums (map ebnf-alt-number alts)]
-    let [slots (filter (fn [i] (ebnf-not (ebnf-less (ebnf-at nums i) 0))) (indices alts))]
-      let [rank (fn [i] (count (filter (fn [j] (match (compare (ebnf-at nums j) (ebnf-at nums i)) (case :less true) (case :equal (ebnf-less j i)) (case _ false))) slots)))]
-        let [ranks (map rank slots)]
-          map (fn [i] (ebnf-number-at alts nums slots ranks i)) (indices alts)
-
-def ebnf-number-at [alts nums slots ranks i]
-  match (ebnf-less (ebnf-at nums i) 0)
-    case true (ebnf-at alts i)
-    case false
-      let [k (count (filter (fn [j] (ebnf-less j i)) slots))]
-        ebnf-at alts (ebnf-at slots (ebnf-at (filter (fn [m] (match (compare (ebnf-at ranks m) k) (case :equal true) (case _ false))) (indices slots)) 0))
-
-; The first alternative that is not empty: an option's.
-def ebnf-filled [alts]
-  ebnf-at (filter ebnf-some alts) 0
-
-; The steps of a chain, each a segment: the tokens its open alternate
-; consumes and the rule it pushes, the next step named in its close.
-def ebnf-chain-walk [self cx name depth acc]
-  let [r (ebnf-chain-step name (ebnf-rule cx name))]
-    let [els (ebnf-cat acc (ebnf-entry-els (ebnf-at (ebnf-open r) 0)))]
-      match (count (ebnf-close r))
-        case 0 els
-        case _
-          match (ebnf-r (ebnf-at (ebnf-close r) 0))
-            case "" els
-            case next
-              match (ebnf-less (count depth) 200)
-                case false (ebnf-fail (string-join "" ["rule " name " is a sequence of more than 200 segments, which the render does not follow"]))
-                case true (self self cx next (push 1 depth) els)
-
-def ebnf-chain [cx name]
-  ebnf-chain-walk ebnf-chain-walk cx name [] []
-
-; A dispatcher's alternatives: one rule per alternative, `<rule>$alt<i>`,
-; and the empty one where a number is missing, or last.
-def ebnf-head-name [name i]
-  string-join "" [name "$alt" (ebnf-num i)]
-
-def ebnf-dispatch-alts [cx name r]
-  let [nums (indices (push 0 (ebnf-open r)))]
-    let [present (filter (fn [i] (ebnf-has cx (ebnf-head-name name i))) nums)]
-      let [last (top present)]
-        let [gaps (filter (fn [i] (match (ebnf-less i last) (case true (ebnf-not (ebnf-among (ebnf-num i) (map ebnf-num present)))) (case false false))) nums)]
-          let [empty (ebnf-some (filter (fn [alt] (ebnf-empty (ebnf-target alt))) (ebnf-open r)))]
-            match (count gaps)
-              case 0
-                ebnf-cat (map (fn [i] (ebnf-chain cx (ebnf-head-name name i))) present) (match empty (case true [[]]) (case false []))
-              case 1
-                map
-                  fn [i]
-                    match (ebnf-has cx (ebnf-head-name name i))
-                      case true (ebnf-chain cx (ebnf-head-name name i))
-                      case false []
-                  filter (fn [i] (ebnf-not (ebnf-less last i))) nums
-              case _ (ebnf-fail (string-join "" ["rule " name " dispatches to alternatives the render cannot place"]))
-
-; Whether the rule dispatches to `$alt` rules of its own.
-def ebnf-dispatches [cx name r]
-  ebnf-some (filter (fn [alt] (ebnf-starts (string-join "" [name "$alt"]) (ebnf-target alt))) (ebnf-open r))
-
-; A loop's item: what its continue alternate takes, a token it consumes,
-; or the rule its iteration (`<loop>$alt0`) pushes.
-def ebnf-loop-item [cx name r]
-  let [conts (filter (fn [alt] (ebnf-full (ebnf-r alt))) (ebnf-rest (ebnf-open r)))]
-    match (count conts)
-      case 0 (ebnf-fail (string-join "" ["the repetition " name " repeats nothing"]))
-      case _
-        let [c (ebnf-at conts 0)]
-          match (ebnf-same (ebnf-r c) name)
-            case true
-              match (ebnf-consumed c)
-                case [t] (ebnf-tok-el t)
-                case _ (ebnf-fail (string-join "" ["the repetition " name " repeats more than one token"]))
-            case false
-              match (ebnf-p (ebnf-at (ebnf-open (ebnf-rule cx (ebnf-r c))) 0))
-                case "" (ebnf-fail (string-join "" ["the repetition " name " repeats nothing"]))
-                case item (ebnf-ref-el item)
-
-; A tail repeat, `X = prefix [ sep X ]`, which the compiler makes a loop
-; in the rule's close: the separator matched and the rule replaced.
-def ebnf-is-tail [name r]
-  match (count (ebnf-close r))
-    case 2
-      let [c (ebnf-at (ebnf-close r) 0)]
-        match (ebnf-a c)
-          case "@fold$" (ebnf-same (ebnf-r c) name)
-          case _ false
-    case _ false
-
-; The alternatives of a rule as the spec holds them, each a vector of
-; elements; a tail repeat as its prefix and the option around its
-; separator and itself.
-def ebnf-raw-alts [cx name]
-  let [r (ebnf-rule cx name)]
-    match (ebnf-is-tail name r)
-      case true
-        let [prefix (map ebnf-tok-el (ebnf-consumed (ebnf-at (ebnf-open r) 0)))]
-          let [sep (map ebnf-tok-el (ebnf-consumed (ebnf-at (ebnf-close r) 0)))]
-            vector
-              push
-                record
-                  entry :k :tail
-                  entry :seq (push (ebnf-ref-el name) sep)
-                prefix
-      case false
-        match (ebnf-dispatches cx name r)
-          case true (ebnf-dispatch-alts cx name r)
-          case false
-            match (count (ebnf-close r))
-              case 0 (ebnf-simple-alts r)
-              case _
-                match (ebnf-r (ebnf-at (ebnf-close r) 0))
-                  case "" (ebnf-simple-alts r)
-                  case _ (vector (ebnf-chain cx name))
-
-; A step of a sequence's chain, as the compiler makes one: one open
-; alternate, a segment of the sequence, and at most one close alternate,
-; which names the next step. A rule that replaces itself in its close and
-; has more alternates than that is no chain the render reads back.
-def ebnf-chain-step [name r]
-  match (match (count (ebnf-open r)) (case 1 (ebnf-less (count (ebnf-close r)) 2)) (case _ false))
-    case true r
-    case false (ebnf-fail (string-join "" ["rule " name " replaces itself in its close as a sequence's step does, and has more alternates than a step, which is not read back"]))
-
-; ---- the compiler's helpers, read back
-
-; The kind of a helper the compiler named: `_gen<n>_<kind>...`.
-def ebnf-helper-kind [cx name]
-  match (ebnf-made cx name)
-    case false ""
-    case true
-      match (ebnf-starts "_gen" name)
-        case true
-          let [parts (split "_" (ebnf-after "_gen" name))]
-            match (ebnf-digits (ebnf-at parts 0))
-              case true (ebnf-at parts 1)
-              case false ""
-        case false
-          match (ebnf-among "fact" (map (fn [p] (ebnf-before-digits p)) (ebnf-rest (split "$" name))))
-            case true "fact"
-            case false ""
-
-def ebnf-before-digits [p]
-  match (ebnf-starts "fact" p)
-    case true (match (ebnf-digits (ebnf-after "fact" p)) (case true "fact") (case false p))
-    case false p
-
-; An alternative with its factored tails expanded back: one whose last
-; element is a left-factored tail (`<rule>$fact<k>`) is the prefix before
-; it followed by each of the tail's alternatives in turn.
-def ebnf-expand [self cx alt]
-  match (count alt)
-    case 0 [alt]
-    case _
-      let [last (top alt)]
-        match (get :k last)
-          case :ref
-            match (ebnf-helper-kind cx (get :name last))
-              case "fact"
-                let [prefix (pop alt)]
-                  ebnf-flat (map (fn [tail] (self self cx (ebnf-cat prefix tail))) (ebnf-raw-alts cx (get :name last)))
-              case _ [alt]
-          case _ [alt]
-
-def ebnf-alts [cx name]
-  ebnf-flat (map (fn [alt] (ebnf-split-group cx name alt)) (ebnf-flat (map (fn [alt] (ebnf-expand ebnf-expand cx alt)) (ebnf-raw-alts cx name))))
-
-; The compiler factors a rule's alternatives that are each one group
-; (`( A x ) | ( A y )`) into the first group, whose sequence then ends in
-; the rule's own factored tail (`<rule>$fact<k>`); such an alternative is
-; read back as the groups it was, one alternative each.
-def ebnf-split-group [cx name alt]
-  match (count alt)
-    case 1
-      let [el (ebnf-at alt 0)]
-        match (get :k el)
-          case :ref
-            match (ebnf-helper-kind cx (get :name el))
-              case "group"
-                let [inner (ebnf-raw-alts cx (get :name el))]
-                  match (count inner)
-                    case 1
-                      let [seq (ebnf-at inner 0)]
-                        match (ebnf-owned-fact cx name seq)
-                          case true (map (fn [one] [(ebnf-grp-el one)]) (ebnf-expand ebnf-expand cx seq))
-                          case false [alt]
-                    case _ [alt]
-              case _ [alt]
-          case _ [alt]
-    case _ [alt]
-
-def ebnf-owned-fact [cx name seq]
-  match (count seq)
+def ebnf-render-num [n]
+  scalar-text csv-options n
+
+def ebnf-render-some [v]
+  match (count v)
     case 0 false
-    case _
-      let [last (top seq)]
-        match (get :k last)
-          case :ref
-            match (ebnf-helper-kind cx (get :name last))
-              case "fact" (ebnf-starts (string-join "" [name "$fact"]) (get :name last))
-              case _ false
-          case _ false
-
-; A group read back from a factored alternative: an element of its own,
-; written as a group is.
-def ebnf-grp-el [seq]
-  record
-    entry :k :grp
-    entry :seq seq
-
-; The parts a repetition counts: the item, how many at least, how many
-; at most ("" for no bound). A bounded one ends in nested options, each
-; over a group of the item and the next option, the innermost over the
-; item alone: `[ A [ A [ A ] ] ]`. The compiler numbers them as it makes
-; them, the innermost group first, under the number it gave the
-; repetition: group n, option n+1 over it, group n+2, ..., so the
-; outermost option's number says how deep they go.
-def ebnf-gen-number [name]
-  number (ebnf-at (split "_" (ebnf-after "_gen" name)) 0)
-
-def ebnf-rep-chain [cx rep opt]
-  let [n (ebnf-gen-number rep)]
-    let [inner-name (string-join "" ["_gen" (ebnf-num n) "_group"])]
-      match (ebnf-has cx inner-name)
-        case false (ebnf-fail (string-join "" ["the repetition " rep " is not numbered as the compiler numbers one"]))
-        case true
-          let [inner (ebnf-raw-alts cx inner-name)]
-            match (count (ebnf-at inner 0))
-              case 1
-                let [span (count (filter (fn [j] (ebnf-not (ebnf-less j n))) (indices (ebnf-ones (ebnf-plus (ebnf-gen-number opt) 1)))))]
-                  record
-                    entry :item (ebnf-at (ebnf-at inner 0) 0)
-                    entry :depth (count (filter ebnf-even (indices (ebnf-ones span))))
-              case _ (ebnf-fail (string-join "" ["the repetition " rep " is not numbered as the compiler numbers one"]))
-
-def ebnf-rep-parts [cx name]
-  let [seq (ebnf-at (ebnf-raw-alts cx name) 0)]
-    let [last (match (count seq) (case 0 (ebnf-fail (string-join "" ["the repetition " name " repeats its item no times, and the spec does not keep the item"]))) (case _ (top seq)))]
-      let [lead (pop seq)]
-        match (ebnf-helper-kind cx (ebnf-str (get :name last)))
-          case "star"
-            record
-              entry :item (ebnf-loop-item cx (get :name last) (ebnf-rule cx (get :name last)))
-              entry :min (count lead)
-              entry :max ""
-          case "opt"
-            let [chain (ebnf-rep-chain cx name (get :name last))]
-              record
-                entry :item (get :item chain)
-                entry :min (count lead)
-                entry :max (ebnf-num (ebnf-plus (count lead) (get :depth chain)))
-          case _
-            record
-              entry :item (ebnf-at seq 0)
-              entry :min (count seq)
-              entry :max (ebnf-num (count seq))
-
-; An element's structure as one string, a helper by what it compiles (a
-; counted repetition by its item and counts, not by the nested options
-; it compiles to, which are as deep as its count).
-def ebnf-key [self cx el]
-  match (get :k el)
-    case :tok (get :name el)
-    case :tail "[tail]"
-    case :grp (string-join "" ["group(" (ebnf-key-seq self cx (get :seq el)) ")"])
-    case :ref
-      let [name (get :name el)]
-        match (ebnf-helper-kind cx name)
-          case "" (string-join "" ["@" name])
-          case "star" (string-join "" ["*(" (self self cx (ebnf-loop-item cx name (ebnf-rule cx name))) ")"])
-          case "rep"
-            let [parts (ebnf-rep-parts cx name)]
-              string-join "" ["rep(" (ebnf-num (get :min parts)) "," (get :max parts) "," (self self cx (get :item parts)) ")"]
-          case kind (string-join "" [kind "(" (string-join "|" (map (fn [seq] (ebnf-key-seq self cx seq)) (ebnf-alts cx name))) ")"])
-
-def ebnf-key-seq [self cx seq]
-  string-join " " (map (fn [e] (self self cx e)) seq)
-
-def ebnf-seq-keys [cx seq]
-  map (fn [el] (ebnf-key ebnf-key cx el)) seq
-
-; ---- characters
-
-; A literal's characters as their code points, which a notation writes
-; where a quoted string cannot hold a character, and the names the
-; compiler derives from a literal's text.
-
-; The ASCII characters, each with its two hexadecimal digits.
-def ebnf-ascii [["\u0000" "00"] ["\u0001" "01"] ["\u0002" "02"] ["\u0003" "03"] ["\u0004" "04"] ["\u0005" "05"] ["\u0006" "06"] ["\u0007" "07"] ["\b" "08"] ["\t" "09"] ["\n" "0A"] ["\u000b" "0B"] ["\f" "0C"] ["\r" "0D"] ["\u000e" "0E"] ["\u000f" "0F"] ["\u0010" "10"] ["\u0011" "11"] ["\u0012" "12"] ["\u0013" "13"] ["\u0014" "14"] ["\u0015" "15"] ["\u0016" "16"] ["\u0017" "17"] ["\u0018" "18"] ["\u0019" "19"] ["\u001a" "1A"] ["\u001b" "1B"] ["\u001c" "1C"] ["\u001d" "1D"] ["\u001e" "1E"] ["\u001f" "1F"] [" " "20"] ["!" "21"] ["\"" "22"] ["#" "23"] ["$" "24"] ["%" "25"] ["&" "26"] ["'" "27"] ["(" "28"] [")" "29"] ["*" "2A"] ["+" "2B"] ["," "2C"] ["-" "2D"] ["." "2E"] ["/" "2F"] ["0" "30"] ["1" "31"] ["2" "32"] ["3" "33"] ["4" "34"] ["5" "35"] ["6" "36"] ["7" "37"] ["8" "38"] ["9" "39"] [":" "3A"] [";" "3B"] ["<" "3C"] ["=" "3D"] [">" "3E"] ["?" "3F"] ["@" "40"] ["A" "41"] ["B" "42"] ["C" "43"] ["D" "44"] ["E" "45"] ["F" "46"] ["G" "47"] ["H" "48"] ["I" "49"] ["J" "4A"] ["K" "4B"] ["L" "4C"] ["M" "4D"] ["N" "4E"] ["O" "4F"] ["P" "50"] ["Q" "51"] ["R" "52"] ["S" "53"] ["T" "54"] ["U" "55"] ["V" "56"] ["W" "57"] ["X" "58"] ["Y" "59"] ["Z" "5A"] ["[" "5B"] ["\\" "5C"] ["]" "5D"] ["^" "5E"] ["_" "5F"] ["`" "60"] ["a" "61"] ["b" "62"] ["c" "63"] ["d" "64"] ["e" "65"] ["f" "66"] ["g" "67"] ["h" "68"] ["i" "69"] ["j" "6A"] ["k" "6B"] ["l" "6C"] ["m" "6D"] ["n" "6E"] ["o" "6F"] ["p" "70"] ["q" "71"] ["r" "72"] ["s" "73"] ["t" "74"] ["u" "75"] ["v" "76"] ["w" "77"] ["x" "78"] ["y" "79"] ["z" "7A"] ["{" "7B"] ["|" "7C"] ["}" "7D"] ["~" "7E"] ["\u007f" "7F"]]
-
-; A piece of a literal's text: a run of its characters (`:raw`), or one
-; character as its code point (`:cp`). A run is cut at each place it
-; holds a character, which is put back as its code point between the
-; pieces, and the empty runs are left out.
-def ebnf-raw-seg [s]
-  record
-    entry :raw s
-
-def ebnf-cp-seg [h]
-  record
-    entry :cp h
-
-def ebnf-cut-seg [c h seg]
-  match (kind (get :raw seg))
-    case :string
-      let [pieces (split c (get :raw seg))]
-        ebnf-flat (map (fn [i] (match i (case 0 [(ebnf-raw-seg (ebnf-at pieces 0))]) (case _ [(ebnf-cp-seg h) (ebnf-raw-seg (ebnf-at pieces i))]))) (indices pieces))
-    case _ [seg]
-
-def ebnf-kept-seg [seg]
-  match (get :raw seg)
-    case "" false
     case _ true
 
-; The sixteen hexadecimal digits, and the 256 pairs of them.
-def ebnf-hex-digits ["0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "A" "B" "C" "D" "E" "F"]
+def ebnf-render-ascii [["\u0000" "00"] ["\u0001" "01"] ["\u0002" "02"] ["\u0003" "03"] ["\u0004" "04"] ["\u0005" "05"] ["\u0006" "06"] ["\u0007" "07"] ["\b" "08"] ["\t" "09"] ["\n" "0A"] ["\u000b" "0B"] ["\f" "0C"] ["\r" "0D"] ["\u000e" "0E"] ["\u000f" "0F"] ["\u0010" "10"] ["\u0011" "11"] ["\u0012" "12"] ["\u0013" "13"] ["\u0014" "14"] ["\u0015" "15"] ["\u0016" "16"] ["\u0017" "17"] ["\u0018" "18"] ["\u0019" "19"] ["\u001a" "1A"] ["\u001b" "1B"] ["\u001c" "1C"] ["\u001d" "1D"] ["\u001e" "1E"] ["\u001f" "1F"] [" " "20"] ["!" "21"] ["\"" "22"] ["#" "23"] ["$" "24"] ["%" "25"] ["&" "26"] ["'" "27"] ["(" "28"] [")" "29"] ["*" "2A"] ["+" "2B"] ["," "2C"] ["-" "2D"] ["." "2E"] ["/" "2F"] ["0" "30"] ["1" "31"] ["2" "32"] ["3" "33"] ["4" "34"] ["5" "35"] ["6" "36"] ["7" "37"] ["8" "38"] ["9" "39"] [":" "3A"] [";" "3B"] ["<" "3C"] ["=" "3D"] [">" "3E"] ["?" "3F"] ["@" "40"] ["A" "41"] ["B" "42"] ["C" "43"] ["D" "44"] ["E" "45"] ["F" "46"] ["G" "47"] ["H" "48"] ["I" "49"] ["J" "4A"] ["K" "4B"] ["L" "4C"] ["M" "4D"] ["N" "4E"] ["O" "4F"] ["P" "50"] ["Q" "51"] ["R" "52"] ["S" "53"] ["T" "54"] ["U" "55"] ["V" "56"] ["W" "57"] ["X" "58"] ["Y" "59"] ["Z" "5A"] ["[" "5B"] ["\\" "5C"] ["]" "5D"] ["^" "5E"] ["_" "5F"] ["`" "60"] ["a" "61"] ["b" "62"] ["c" "63"] ["d" "64"] ["e" "65"] ["f" "66"] ["g" "67"] ["h" "68"] ["i" "69"] ["j" "6A"] ["k" "6B"] ["l" "6C"] ["m" "6D"] ["n" "6E"] ["o" "6F"] ["p" "70"] ["q" "71"] ["r" "72"] ["s" "73"] ["t" "74"] ["u" "75"] ["v" "76"] ["w" "77"] ["x" "78"] ["y" "79"] ["z" "7A"] ["{" "7B"] ["|" "7C"] ["}" "7D"] ["~" "7E"] ["\u007f" "7F"]]
 
-def ebnf-hex-pairs
-  ebnf-flat (map (fn [a] (map (fn [b] (string-join "" [a b])) ebnf-hex-digits)) ebnf-hex-digits)
-
-; ---- token names
-
-; The name the compiler derives for a literal's token: the text in
-; capitals, each character that is not a letter or a digit an underscore,
-; the underscores at either end taken off, `T` when nothing is left, and a
-; number after it when the name is taken. A token with any other name is a
-; rule the compiler lifted to a token.
-def ebnf-upper-pairs [["a" "A"] ["b" "B"] ["c" "C"] ["d" "D"] ["e" "E"] ["f" "F"] ["g" "G"] ["h" "H"] ["i" "I"] ["j" "J"] ["k" "K"] ["l" "L"] ["m" "M"] ["n" "N"] ["o" "O"] ["p" "P"] ["q" "Q"] ["r" "R"] ["s" "S"] ["t" "T"] ["u" "U"] ["v" "V"] ["w" "W"] ["x" "X"] ["y" "Y"] ["z" "Z"]]
-
-def ebnf-swap-walk [self pairs s]
-  match (count pairs)
-    case 0 s
-    case _
-      let [pair (top pairs)]
-        self self (pop pairs) (string-join (ebnf-at pair 1) (split (ebnf-at pair 0) s))
-
-def ebnf-word-chars [[48 57] [65 90] [97 122]]
-
-def ebnf-base-name [text]
-  let [up (ebnf-swap-walk ebnf-swap-walk ebnf-upper-pairs text)]
-    let [others (filter (fn [ch] (ebnf-not (chars-within ebnf-word-chars (ebnf-at ch 0)))) ebnf-ascii)]
-      let [under (ebnf-swap-walk ebnf-swap-walk (map (fn [ch] [(ebnf-at ch 0) "_"]) others) up)]
-        let [pieces (split "_" under)]
-          let [full (filter (fn [i] (ebnf-full (ebnf-at pieces i))) (indices pieces))]
-            match (count full)
-              case 0 "T"
-              case _
-                let [lo (ebnf-at full 0)]
-                  let [hi (top full)]
-                    string-join "_" (map (fn [i] (ebnf-at pieces i)) (filter (fn [i] (match (ebnf-less i lo) (case true false) (case false (ebnf-not (ebnf-less hi i))))) (indices pieces)))
-
-def ebnf-derived [bare text]
-  match (chars-within [[48 57] [65 90] [95 95]] bare)
-    case false false
-    case true
-      match (chars-within [[0 127]] text)
-        case false true
-        case true
-          let [base (ebnf-base-name text)]
-            match (ebnf-same bare base)
-              case true true
-              case false
-                match (ebnf-starts base bare)
-                  case true (ebnf-digits (ebnf-after base bare))
-                  case false false
-
-; Every token name the alternates match, one string.
-def ebnf-used [cx]
-  let [rules (get :rules cx)]
-    string-join ""
-      vector
-        " "
-        string-join " "
-          map
-            fn [name]
-              let [r (get-path (as-path [name]) rules)]
-                string-join " " (ebnf-flat (map ebnf-s (ebnf-cat (ebnf-open r) (ebnf-close r))))
-            keys rules
-        " "
-
-; ---- references written back
-
-; The compiler substitutes a reference that leads an alternative by the
-; referenced rule's alternatives, each followed by what followed the
-; reference (`a = b "x"`, `b = "y" / "z"` compiles `a` as `"y" "x" / "z"
-; "x"`), and compiles the reference back to the same alternatives. So
-; where a run of a rule's alternatives is another rule's alternatives,
-; each followed by one same tail, the reference is written back in their
-; place. A candidate is a rule the written file can name, with its
-; alternatives' keys; a rule that is one reference (`a = b`) is none,
-; since the compiler leaves such a rule a reference rather than
-; substituting it.
-def ebnf-candidates [cx names]
-  filter
-    fn [c] (ebnf-not (ebnf-alias-keys (get :keys c)))
-    map (fn [n] (record (entry :name n) (entry :keys (map (fn [seq] (ebnf-seq-keys cx seq)) (ebnf-alts cx n))))) names
-
-def ebnf-alias-keys [ks]
-  match (count ks)
-    case 1
-      match (count (ebnf-at ks 0))
-        case 1 (ebnf-starts "@" (ebnf-at (ebnf-at ks 0) 0))
-        case _ false
-    case _ false
-
-; Whether alternatives are one alternative of one reference to a rule:
-; a rule the compiler leaves as it is.
-def ebnf-alias [cx alts]
-  match (count alts)
-    case 1
-      let [seq (ebnf-at alts 0)]
-        match (count seq)
-          case 1
-            match (get :k (ebnf-at seq 0))
-              case :ref (ebnf-empty (ebnf-helper-kind cx (get :name (ebnf-at seq 0))))
-              case _ false
-          case _ false
-    case _ false
-
-; Whether the alternative's keys begin with the candidate alternative's,
-; and what follows them ("\u0000" where they do not).
-def ebnf-prefix-tail [ks cs]
-  match (ebnf-less (count ks) (count cs))
-    case true "\u0000"
-    case false
-      match (ebnf-same (string-join "\u0001" (ebnf-take (count cs) ks)) (string-join "\u0001" cs))
-        case true (string-join "\u0001" (ebnf-drop (count cs) ks))
-        case false "\u0000"
-
-; Whether the candidate's alternatives, each followed by one same tail,
-; are the alternatives from position i on.
-def ebnf-cand-matches [c ka i]
-  let [k (count (get :keys c))]
-    match (ebnf-less (count ka) (ebnf-plus i k))
-      case true false
-      case false
-        let [first (ebnf-prefix-tail (ebnf-at ka i) (ebnf-at (get :keys c) 0))]
-          match first
-            case "\u0000" false
-            case _ (ebnf-none (filter (fn [j] (ebnf-not (ebnf-same (ebnf-prefix-tail (ebnf-at ka (ebnf-plus i j)) (ebnf-at (get :keys c) j)) first))) (indices (get :keys c))))
-
-; The candidate, other than the rule itself, whose alternatives stand at
-; position i: where several do, the one with the most alternatives, and
-; among those the one the spec defines first. The spec cannot tell `a = b
-; ";"` with `b = c "("` from `a = c "(" ";"`, nor a reference from two
-; rules that begin alike by chance; a grammar written from the top down
-; defines the rule an author named before the ones it is made of.
-def ebnf-cand-at [cands ka i self]
-  let [hits (filter (fn [c] (match (ebnf-same (get :name c) self) (case true false) (case false (ebnf-cand-matches c ka i)))) cands)]
-    let [most (filter (fn [c] (ebnf-none (filter (fn [d] (ebnf-less (count (get :keys c)) (count (get :keys d)))) hits))) hits)]
-      match (count most)
-        case 0 null
-        case _ (ebnf-at most 0)
-
-; A rule's alternatives with the references written back: each run a
-; candidate covers, from the first position one stands at that no other
-; run covers, written as the reference and the tail; the alternatives
-; as they are where no run is found, and where writing one back would
-; leave the rule one reference, which the compiler would not substitute.
-def ebnf-unsub [cx cands self alts]
-  match (count cands)
-    case 0 alts
-    case _
-      let [ka (map (fn [seq] (ebnf-seq-keys cx seq)) alts)]
-        let [best (map (fn [i] (ebnf-cand-at cands ka i self)) (indices alts))]
-          let [covers (fn [j i] (match (kind (ebnf-at best j)) (case :record (match (ebnf-less j i) (case true (ebnf-less i (ebnf-plus j (count (get :keys (ebnf-at best j)))))) (case false false))) (case _ false)))]
-            let [accepted (map (fn [i] (match (kind (ebnf-at best i)) (case :record (ebnf-none (filter (fn [j] (covers j i)) (indices alts)))) (case _ false))) (indices alts))]
-              let [out (ebnf-flat (map (fn [i] (ebnf-unsub-at cx alts best accepted covers i)) (indices alts)))]
-                match (ebnf-alias cx out)
-                  case true alts
-                  case false out
-
-def ebnf-unsub-at [cx alts best accepted covers i]
-  match (ebnf-at accepted i)
-    case true
-      let [c (ebnf-at best i)]
-        vector (ebnf-cat [(ebnf-ref-el (get :name c))] (ebnf-drop (count (ebnf-at (get :keys c) 0)) (ebnf-at alts i)))
-    case false
-      match (ebnf-some (filter (fn [j] (match (ebnf-at accepted j) (case true (covers j i)) (case false false))) (indices alts)))
-        case true []
-        case false [(ebnf-at alts i)]
-
-; ---- EBNF's terminals
-
-; The characters a W3C EBNF string cannot hold, since the notation has no
-; escapes: the C0 controls, DEL and the C1 controls, each written as a
-; code point of its own.
-def ebnf-control-codes [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159]
-
-; A code point's hexadecimal digits, as W3C EBNF writes them after `#x`:
-; in capitals, without leading zeros.
-def ebnf-code-digits [h]
-  let [up (ebnf-hex-upper h)]
-    let [trimmed (ebnf-trim-zeros ebnf-trim-zeros up)]
-      match trimmed
-        case "" "0"
-        case _ trimmed
-
-def ebnf-trim-zeros [self h]
-  match (ebnf-starts "0" h)
-    case true (self self (ebnf-after-first "0" h))
-    case false h
-
-def ebnf-after-first [p s]
-  string-join p (ebnf-rest (split p s))
-
-; The two digits of a code point below 256.
-def ebnf-code-hex [code]
-  ebnf-at ebnf-hex-pairs code
-
-def ebnf-code-char [code]
-  unquoted (string-join "" ["\"\\u00" (ebnf-hex-lower (ebnf-code-hex code)) "\""])
-
-; A run of characters a string can hold as one W3C EBNF string: in double
-; quotes, or in single quotes where it holds a double quote.
-def ebnf-quote [text]
-  match (ebnf-some (ebnf-rest (split "\"" text)))
-    case false (string-join "" ["\"" text "\""])
-    case true (string-join "" ["'" text "'"])
-
-; A literal's terminals: one string, or, where the literal holds a control
-; character or both quotes, which a W3C EBNF string cannot hold, the
-; strings and code points (`#xA`) that spell it, each such character a code
-; point of its own.
-def ebnf-string-items [text]
-  let [both (match (ebnf-some (ebnf-rest (split "\"" text))) (case true (ebnf-some (ebnf-rest (split "'" text)))) (case false false))]
-    match (match (chars-within [[32 126] [160 1114111]] text) (case true (ebnf-not both)) (case false false))
-      case true [(ebnf-quote text)]
-      case false
-        let [codes (match both (case true (push 34 ebnf-control-codes)) (case false ebnf-control-codes))]
-          map
-            fn [seg]
-              match (kind (get :raw seg))
-                case :string (ebnf-quote (get :raw seg))
-                case _ (get :cp seg)
-            ebnf-code-cut ebnf-code-cut codes [(ebnf-raw-seg text)]
-
-def ebnf-code-cut [self codes segs]
-  match (count codes)
-    case 0 segs
-    case _
-      let [code (top codes)]
-        self self (pop codes) (filter ebnf-kept-seg (ebnf-flat (map (fn [seg] (ebnf-cut-seg (ebnf-code-char code) (string-join "" ["#x" (ebnf-code-digits (ebnf-code-hex code))]) seg)) segs)))
-
-; A case-insensitive literal's terminals (ABNF's default), since W3C EBNF's
-; strings match exactly: each ASCII letter a class of its two cases, each
-; run of other characters a string. A letter past ASCII has no one right
-; expansion, and is refused.
-def ebnf-fold-cut [self pairs segs]
-  match (count pairs)
-    case 0 segs
-    case _
-      let [pair (top pairs)]
-        let [mark (string-join "" ["[" (ebnf-at pair 0) (ebnf-at pair 1) "]"])]
-          self self (pop pairs) (ebnf-fold-split (ebnf-at pair 1) mark (ebnf-fold-split (ebnf-at pair 0) mark segs))
-
-def ebnf-fold-split [c mark segs]
-  filter ebnf-kept-seg (ebnf-flat (map (fn [seg] (ebnf-cut-seg c mark seg)) segs))
-
-; The characters whose cases a case-insensitive literal's pattern does not
-; fold, which a string matches exactly: ASCII, whose letters are written
-; as the classes of their two cases, and the characters past U+FFFF but
-; those of the scripts that have cases (Deseret, Osage, Vithkuqi, Old
-; Hungarian, Garay, Warang Citi, Medefaidrin, Adlam). A character of the
-; Basic Multilingual Plane past ASCII may have cases, and is refused.
-def ebnf-caseless [[0 127] [65536 66559] [66640 66735] [66816 66927] [67008 68735] [68864 68927] [69008 71839] [71936 93759] [93856 125183] [125280 1114111]]
-
-def ebnf-folded [text]
-  match (chars-within ebnf-caseless text)
-    case false (ebnf-fail (string-join "" ["the case-insensitive literal " (quoted text) " holds a character past ASCII that may have cases, which EBNF cannot spell"]))
-    case true
-      ebnf-flat
-        map
-          fn [seg]
-            match (kind (get :raw seg))
-              case :string (ebnf-string-items (get :raw seg))
-              case _ [(get :cp seg)]
-          ebnf-fold-cut ebnf-fold-cut ebnf-upper-pairs [(ebnf-raw-seg text)]
-
-; A literal as the one W3C EBNF terminal that matches what it matches: a
-; string, a character no string holds as its code point, a case-insensitive
-; letter as the class of its two cases. This front end reads whitespace
-; between terminals, so a literal that would take more than one (a
-; case-insensitive letter beside another character, a control character
-; or both quotes beside other characters) would match more than the
-; literal does, with whitespace inside it, and is refused. The empty
-; literal has no W3C EBNF spelling.
-def ebnf-lit-items [text cs]
-  match text
-    case "" (ebnf-fail "the empty literal, which W3C EBNF has no syntax for")
-    case _
-      let [items (match cs (case true (ebnf-string-items text)) (case false (ebnf-folded text)))]
-        match (count items)
-          case 1 items
-          case _ (ebnf-fail (string-join "" ["the " (match cs (case true "") (case false "case-insensitive ")) "literal " (quoted text) " is no one W3C EBNF terminal: it would be written as " (string-join " " items) ", and this front end reads whitespace between terminals"]))
-
-; A class's member, `\uXXXX` or `\u{X...}`, as W3C EBNF writes it: a
-; printable ASCII character as itself, unless it means something inside
-; a class (`]`, `[`, `-`, `^`, `#`, `\`), and every other character as a
-; code point, `#x<hex>`.
-def ebnf-member [e]
-  let [u (ebnf-after "\\u" e)]
-    let [hex (ebnf-hex-lower (match (ebnf-starts "{" u) (case true (ebnf-before "}" (ebnf-after "{" u))) (case false u)))]
-      let [h4 (string-join "" [(match (length hex) (case 1 "000") (case 2 "00") (case 3 "0") (case _ "")) hex])]
-        match (ebnf-less 4 (length hex))
-          case true (string-join "" ["#x" (ebnf-code-digits hex)])
-          case false
-            match (ebnf-surrogate h4)
-              case true (string-join "" ["#x" (ebnf-code-digits h4)])
-              case false
-                let [c (unquoted (string-join "" ["\"\\u" h4 "\""]))]
-                  match (chars-within [[33 34] [36 44] [46 90] [95 126]] c)
-                    case true c
-                    case false (string-join "" ["#x" (ebnf-code-digits h4)])
-
-def ebnf-surrogate [h]
-  ebnf-some (filter (fn [p] (ebnf-starts p h)) ["d8" "d9" "da" "db" "dc" "dd" "de" "df"])
-
-; A class's member as a code point whatever it is, `#x<hex>`.
-def ebnf-member-code [e]
-  let [u (ebnf-after "\\u" e)]
-    let [hex (ebnf-hex-lower (match (ebnf-starts "{" u) (case true (ebnf-before "}" (ebnf-after "{" u))) (case false u)))]
-      match (ebnf-less 4 (length hex))
-        case true (string-join "" ["#x" (ebnf-code-digits hex)])
-        case false (string-join "" ["#x" (ebnf-code-digits (string-join "" [(match (length hex) (case 1 "000") (case 2 "00") (case 3 "0") (case _ "")) hex]))])
-
-; A member of a class's pattern as W3C EBNF writes it, a range's start
-; with its dash: as `ebnf-member` writes it, or as a code point where
-; `coded` is true.
-def ebnf-member-written [m coded]
-  let [start (ebnf-ends "-" m)]
-    let [e (string-join "" ["\\u" (match start (case true (ebnf-before "-" m)) (case false m))])]
-      let [text (match coded (case true (ebnf-member-code e)) (case false (ebnf-member e)))]
-        match start
-          case true (string-join "" [text "-"])
-          case false text
-
-; A class's members one after another. W3C EBNF reads a code point's
-; hexadecimal digits for as long as they go (`#x5Cb` is U+5CB, `#x1Fab`
-; U+1FAB), so a member written right after a code point, a range's end
-; among them, that would begin with a hexadecimal digit is written as a
-; code point of its own, and the members after it the same way.
-def ebnf-members-text [self ms coded acc]
-  match (count ms)
-    case 0 acc
-    case _
-      let [m (ebnf-at ms 0)]
-        let [plain (ebnf-member-written m false)]
-          let [text (match (match coded (case true (ebnf-hex-first plain)) (case false false)) (case true (ebnf-member-written m true)) (case false plain))]
-            self self (ebnf-rest ms) (ebnf-code-last text) (string-join "" [acc text])
-
-; Whether a member's text begins with a hexadecimal digit.
-def ebnf-hex-first [text]
-  ebnf-some (filter (fn [d] (ebnf-starts d text)) ["0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "a" "b" "c" "d" "e" "f" "A" "B" "C" "D" "E" "F"])
-
-; Whether a member's text ends with a code point's digits: a code point
-; that is not a range's start, whose dash ends it.
-def ebnf-code-last [text]
-  match (ebnf-starts "#x" text)
-    case false false
-    case true (ebnf-not (ebnf-ends "-" text))
-
-; A class's pattern as W3C EBNF: its members and ranges, each member as
-; `ebnf-member` writes it, or as a code point where it would follow one
-; and begin with a hexadecimal digit, and `[\s\S]`, which another
-; notation's `.` compiles to, as the class of every code point.
-def ebnf-class-text [pat]
-  match pat
-    case "[\\s\\S]" "[#x0-#x10FFFF]"
-    case _
-      let [body (ebnf-before "]" (ebnf-after "[" pat))]
-        let [negated (ebnf-starts "^" body)]
-          let [members (ebnf-rest (split "\\u" (match negated (case true (ebnf-after "^" body)) (case false body))))]
-            string-join ""
-              vector
-                "["
-                match negated
-                  case true "^"
-                  case false ""
-                ebnf-members-text ebnf-members-text members false ""
-                "]"
-
-; ---- EBNF's elements
-
-; A rule name W3C EBNF can spell: a letter or `_`, then letters, digits,
-; `_`, `.` and `-`.
-def ebnf-legal-name [name]
-  match name
-    case "" false
-    case _
-      match (ebnf-some (filter (fn [d] (ebnf-starts d name)) ["0" "1" "2" "3" "4" "5" "6" "7" "8" "9" "-" "."]))
-        case true false
-        case false (chars-within [[45 46] [48 57] [65 90] [95 95] [97 122]] name)
-
-def ebnf-ref-text [name]
-  match (ebnf-legal-name name)
-    case true name
-    case false (ebnf-fail (string-join "" ["the rule " (quoted name) " has a name EBNF cannot spell"]))
-
-; Whether a token is a rule the compiler lifted: a literal's token whose
-; name is not the one the literal gives it, or that nothing references,
-; and whose name EBNF can spell.
-def ebnf-lifted [cx used t]
-  let [info (ebnf-token cx t)]
-    match (get :k info)
-      case :lit
-        match (ebnf-legal-name (ebnf-bare t))
-          case false false
-          case true
-            match (ebnf-derived (ebnf-bare t) (get :text info))
-              case false true
-              case true (ebnf-not (ebnf-some (ebnf-rest (split (string-join "" [" " t " "]) used))))
-      case _ false
-
-; A token's EBNF items: the rule it was lifted from, a literal's string or
-; strings, a class, and the engine's own `TX`, `NR`, `ST` and `VL` by the
-; names the compiler reads them by.
-def ebnf-token-items [cx lifted t]
-  match (ebnf-among t lifted)
-    case true [(ebnf-bare t)]
-    case false
-      let [info (ebnf-token cx t)]
-        match (get :k info)
-          case :lit (ebnf-lit-items (get :text info) (get :cs info))
-          case :class [(ebnf-class-text (get :pat info))]
-          case :engine [(get :name info)]
-
-; ---- how deep the text nests
-;
-; This front end reads a grammar text back by compiling it, and its
-; reader refuses a rule whose elements nest more than 128 levels deep:
-; the shared compiler's MAX_ELEMENT_DEPTH, which the Rust reader the hosts
-; run inherits. Its own caps, 130 levels and 129 nested groups, lie past
-; that; the TypeScript reader holds no fixed cap (its stack runs out some
-; hundreds of levels further) and the Go reader none. An element of a
-; rule's alternative is at level 1, and each group and each postfix
-; operator written around an element puts it one level deeper: in
-; `"a" ( "a" "a"? )?` the last "a" is at level 4, inside the option, the
-; group and the option. The render writes nothing deeper than the limit.
-def ebnf-max-depth 128
-
-; Where an element is written: the rule (`:rule`), the level its elements
-; stand at (`:at`, 1 for a rule's alternatives), and the counted
-; repetition written as the most nested options around it (`:rep`, ""
-; where none, `:opts` how many), which a refusal names.
-def ebnf-pos [rule at rep opts]
-  record
-    entry :rule rule
-    entry :at at
-    entry :rep rep
-    entry :opts opts
-
-def ebnf-deeper [pos k]
-  ebnf-pos (get :rule pos) (ebnf-plus (get :at pos) k) (get :rep pos) (get :opts pos)
-
-def ebnf-at-level [pos at]
-  ebnf-pos (get :rule pos) at (get :rep pos) (get :opts pos)
-
-def ebnf-in-rep [pos name opts]
-  match (ebnf-less (get :opts pos) opts)
-    case true (ebnf-pos (get :rule pos) (get :at pos) name opts)
-    case false pos
-
-; A terminal or a reference, written at its level. Every group and option
-; the render writes holds one, so no element is deeper than the deepest
-; of these; one past the limit refuses its rule.
-def ebnf-leaf [pos text]
-  match (ebnf-less ebnf-max-depth (get :at pos))
-    case false text
-    case true (ebnf-fail (string-join "" ["rule " (get :rule pos) " would be written with an element nested " (ebnf-num (get :at pos)) " levels deep" (ebnf-in-rep-text pos) ", past the " (ebnf-num ebnf-max-depth) " levels this front end reads back"]))
-
-def ebnf-in-rep-text [pos]
-  match (get :rep pos)
-    case "" ""
-    case rep (string-join "" [", inside the repetition " rep ", written as " (ebnf-num (get :opts pos)) " nested options"])
-
-; A counted repetition, which W3C EBNF has no syntax for, as its copies:
-; the item as many times as the least count, then the item repeated
-; (`x*`) where there is no bound, or the nested options up to the bound
-; (`( x x? )?`). Each of those options but the innermost holds a group,
-; so n of them put the innermost copy of the item 2n - 1 levels below the
-; first: where that would pass what this front end reads back, the
-; repetition is refused before its text is made. The item's text is the
-; same at every level, so it is made once, at the level of its deepest
-; copy, where any element inside it that would pass the limit is found.
-def ebnf-rep-text [self cx lifted pos name]
-  let [parts (ebnf-rep-plan pos name (ebnf-rep-parts cx name))]
-    let [atom (self self cx lifted (ebnf-at-level (ebnf-in-rep pos name (get :opts parts)) (get :deep parts)) :atom (get :item parts))]
-      let [lead (map (fn [i] atom) (indices (ebnf-ones (get :min parts))))]
-        let [rest (match (get :max parts) (case "" [(string-join "" [atom "*"])]) (case _ (ebnf-rep-options atom (get :opts parts))))]
-          string-join " " (ebnf-cat lead rest)
-
-; A counted repetition's parts, with how many nested options it is
-; written as (`:opts`) and the level of its item's deepest copy
-; (`:deep`), once it is found to fit.
-def ebnf-rep-plan [pos name parts]
-  let [opts (match (get :max parts) (case "" 0) (case max (count (ebnf-drop (get :min parts) (ebnf-ones (number max))))))]
-    let [deep (ebnf-rep-depth pos parts opts)]
-      let [fits (ebnf-check-rep pos name parts opts deep)]
-        record
-          entry :item (get :item parts)
-          entry :min (get :min parts)
-          entry :max (get :max parts)
-          entry :opts opts
-          entry :deep deep
-
-; The level of a counted repetition's deepest copy of its item: below the
-; option of each copy past the least count and the group of each of those
-; but the innermost, below the loop where there is no bound, and beside
-; the others where there is one count.
-def ebnf-rep-depth [pos parts opts]
-  match (get :max parts)
-    case "" (ebnf-plus (get :at pos) 1)
-    case _
-      match opts
-        case 0 (get :at pos)
-        case _ (ebnf-plus (ebnf-plus (get :at pos) opts) (count (ebnf-rest (ebnf-ones opts))))
-
-def ebnf-check-rep [pos name parts opts deep]
-  match opts
-    case 0 true
-    case _
-      match (ebnf-less ebnf-max-depth deep)
-        case false true
-        case true (ebnf-fail (string-join "" ["the repetition " name " of rule " (get :rule pos) ", of up to " (get :max parts) " copies, would be written as " (ebnf-num opts) " nested options, nesting its item " (ebnf-num deep) " levels deep, past the " (ebnf-num ebnf-max-depth) " levels this front end reads back"]))
-
-def ebnf-rep-options [atom depth]
-  match depth
-    case 0 []
-    case _
-      let [outer (count (ebnf-rest (ebnf-ones depth)))]
-        vector (string-join "" [(repeat outer (string-join "" ["( " atom " "])) atom "?" (repeat outer " )?")])
-
-; The element a postfix applies to: a terminal, a rule, a group, or
-; another postfixed element, which this dialect stacks (`x+?`); a literal
-; of more than one item is put in a group.
-def ebnf-atom-text [self cx lifted pos el]
-  match (get :k el)
-    case :tok
-      let [items (ebnf-token-items cx lifted (get :name el))]
-        match (count items)
-          case 1 (ebnf-leaf pos (ebnf-at items 0))
-          case _ (string-join "" ["( " (string-join " " (map (fn [item] (ebnf-leaf (ebnf-deeper pos 1) item)) items)) " )"])
-    case :ref
-      match (ebnf-helper-kind cx (get :name el))
-        case "rep" (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 1) :el el) " )"])
-        case _ (self self cx lifted pos :el el)
-    case _ (self self cx lifted pos :el el)
-
-def ebnf-el-text [self cx lifted pos el]
-  match (get :k el)
-    case :tok (string-join " " (map (fn [item] (ebnf-leaf pos item)) (ebnf-token-items cx lifted (get :name el))))
-    case :tail (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 2) :alts [(get :seq el)]) " )?"])
-    case :grp (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 1) :alts [(get :seq el)]) " )"])
-    case :ref
-      let [name (get :name el)]
-        match (ebnf-helper-kind cx name)
-          case "" (ebnf-leaf pos (ebnf-ref-text name))
-          case "star" (string-join "" [(self self cx lifted (ebnf-deeper pos 1) :atom (ebnf-loop-item cx name (ebnf-rule cx name))) "*"])
-          case "plus"
-            let [seq (ebnf-at (ebnf-alts cx name) 0)]
-              string-join "" [(self self cx lifted (ebnf-deeper pos 1) :atom (ebnf-at seq 0)) "+"]
-          case "opt"
-            let [inner (ebnf-at (ebnf-filled (ebnf-alts cx name)) 0)]
-              string-join "" [(self self cx lifted (ebnf-deeper pos 1) :atom inner) "?"]
-          case "rep" (ebnf-rep-text self cx lifted pos name)
-          case "group" (string-join "" ["( " (self self cx lifted (ebnf-deeper pos 1) :alts (ebnf-alts cx name)) " )"])
-          case kind (ebnf-fail (string-join "" ["the rule " name " is a helper of a kind the render does not read (" kind ")"]))
-
-def ebnf-seq-text [self cx lifted pos seq]
-  string-join " " (map (fn [el] (self self cx lifted pos :el el)) seq)
-
-; Where alternatives' elements stand: where `pos` says, or two levels
-; deeper where an empty one makes the others optional, `( ... )?`.
-def ebnf-alts-pos [pos filled x]
-  match (compare (count filled) (count x))
-    case :equal pos
-    case _ (ebnf-deeper pos 2)
-
-; The text of a rule's or a group's alternatives (`:alts`, `|` between
-; them), of an element (`:el`) and of the element a postfix applies to
-; (`:atom`): the one function the render recurses through, as `self`, a
-; helper's alternatives a level deeper, each written where `pos` says, a
-; group's elements and a postfix's element one level below it. W3C EBNF
-; has no empty alternative, so alternatives that hold one are written as
-; the others made optional, `( ... )?`, which matches the same and puts
-; them two levels deeper.
-def ebnf-text [self cx lifted pos mode x]
-  match mode
-    case :alts
-      let [filled (filter ebnf-some x)]
-        let [text (string-join " | " (map (fn [seq] (ebnf-seq-text self cx lifted (ebnf-alts-pos pos filled x) seq)) filled))]
-          match (count filled)
-            case 0 (ebnf-fail "a rule or a group whose one alternative is empty, which W3C EBNF has no syntax for")
-            case _
-              match (compare (count filled) (count x))
-                case :equal text
-                case _ (string-join "" ["( " text " )?"])
-    case :el (ebnf-el-text self cx lifted pos x)
-    case :atom (ebnf-atom-text self cx lifted pos x)
-
-; ---- the file
-
-def ebnf-production [cx cands lifted name]
-  string-join "" [(ebnf-ref-text name) " ::= " (ebnf-text ebnf-text cx lifted (ebnf-pos name 1 "" 0) :alts (ebnf-unsub cx cands name (ebnf-alts cx name)))]
-
-def ebnf-lifted-production [cx t]
-  let [info (ebnf-token cx t)]
-    string-join "" [(ebnf-ref-text (ebnf-bare t)) " ::= " (string-join " " (ebnf-lit-items (get :text info) (get :cs info)))]
-
-; The grammar's start rule: the one the start wrapper pushes, or the rule
-; `options.rule.start` names where it is no wrapper.
-def ebnf-start-rule [cx]
-  let [r (ebnf-rule cx (get :start cx))]
-    match (ebnf-wrapper r)
-      case true (ebnf-p (ebnf-at (ebnf-open r) 0))
-      case false (get :start cx)
-
-; A rule the compiler lifted to a token is written under the token's name,
-; which no rule of the spec may hold already, nor the `root` a written
-; start line takes: two productions of one name are one rule.
-def ebnf-check-lifted [cx taken lifted]
-  map
-    fn [t]
-      match (match (ebnf-has cx (ebnf-bare t)) (case true true) (case false (ebnf-among (ebnf-bare t) taken)))
-        case true (ebnf-fail (string-join "" ["the token " t " is written as a rule named " (ebnf-bare t) ", the name of another rule the text holds"]))
-        case false t
-    lifted
-
-; The start rule is written first, as this dialect starts from its first
-; rule; the others in the spec's order, then the rules the compiler made
-; tokens of.
-def ebnf-file [spec]
-  let [cx (ebnf-context spec)]
-    let [checked (ebnf-check spec cx)]
-      let [names (filter (fn [n] (ebnf-not (ebnf-made cx n))) (keys (get :rules cx)))]
-        let [start (ebnf-start-rule cx)]
-          let [ordered (ebnf-cat [start] (filter (fn [n] (ebnf-not (ebnf-same n start))) names))]
-            let [used (ebnf-used cx)]
-              let [tokens (ebnf-cat (keys (get :fixed cx)) (keys (get :match cx)))]
-                let [lifted (ebnf-check-lifted cx [] (filter (fn [t] (ebnf-lifted cx used t)) tokens))]
-                  let [cands (ebnf-candidates cx ordered)]
-                    string-join ""
-                      vector
-                        string-join "\n" (ebnf-cat (map (fn [n] (ebnf-production cx cands lifted n)) ordered) (map (fn [t] (ebnf-lifted-production cx t)) lifted))
-                        "\n"
-
-def ebnf-render [input]
-  concat-map ebnf-file (select root input)
+def ebnf-render-at [v i]
+  get-path (as-path [i]) v

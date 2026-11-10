@@ -7,17 +7,20 @@
 // TypeScript, Go and Rust implementations all read the SAME files and
 // cannot drift without one of them going red.
 //
-// THIS REPOSITORY HAS NO SUCH FIXTURES. There is no `test/spec`
-// directory and no repo-root `test/` at all, and `AGENTS.md` says so
-// under "Error codes": this package declares no error codes, and what
-// pins its behaviour today is in-language, message by message.
+// THIS REPOSITORY HAS ONE SUCH FIXTURE, `test/spec/tree.tsv`: the tree a
+// host translates, each grammar held to its tree's JSON text or to the
+// code the tree parser refuses it with. It is read by a loader of its own
+// in each runtime, `tests/tree_test.rs` here, `ts/test/tree.test.js` and
+// `go/tree_test.go` in the others, each reading a cell as tabnas-support
+// does. The IR this package compiles declares no error codes of its own,
+// and what pins it is in-language, message by message.
 //
-// So parity is measured against the canonical implementation directly,
-// in `tests/oracle_test.rs`, which holds this port to what `ts/dist`
-// answered for eighty-five sources.
+// So parity of the IR is measured against the canonical implementation
+// directly, in `tests/oracle_test.rs`, which holds this port to what
+// `ts/dist` answered for eighty-five sources.
 //
-// What is left here is the guard. The day shared fixtures DO land, this
-// test fails and names them, so they cannot sit in the tree unread while
+// What is left here is the guard. The day another shared fixture lands,
+// this test fails and names it, so it cannot sit in the tree unread while
 // a `parity_test.rs` that runs nothing keeps reporting green.
 
 use std::path::{Path, PathBuf};
@@ -44,13 +47,19 @@ fn shared_fixtures_would_have_to_be_wired_in() {
             }
         }
     }
+    let read = root.join("test").join("spec").join("tree.tsv");
+    found.retain(|path| *path != read.display().to_string());
     assert!(
         found.is_empty(),
-        "shared fixtures have landed and nothing here reads them:\n  {}\n\nWire them through \
-         `tabnas_support::Runner` in this file, the way the abnf, csv and toml ports do, and \
-         rewrite this test's header. Every row of every shared fixture must pass, or the row \
-         must be in the divergence register with a `rust` column.",
+        "shared fixtures have landed and nothing here reads them:\n  {}\n\nRead them as \
+         `tests/tree_test.rs` reads `test/spec/tree.tsv`, in every runtime, and rewrite this \
+         test's header. Every row of every shared fixture must pass, or the row must be in \
+         the divergence register with a `rust` column.",
         found.join("\n  ")
+    );
+    assert!(
+        read.is_file(),
+        "test/spec/tree.tsv, which tests/tree_test.rs reads, is gone"
     );
 }
 

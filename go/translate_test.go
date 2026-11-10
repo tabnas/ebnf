@@ -41,6 +41,25 @@ func TestTranslationParts(t *testing.T) {
 	if parts.Render.Source != string(render) {
 		t.Fatal("embedded render differs from alchemy/render.alc: run npm run embed in ts")
 	}
+	for _, p := range []struct {
+		part  *TranslationPart
+		entry string
+		file  string
+	}{
+		{parts.Transduce, "ebnf-transduce", "../alchemy/transduce.alc"},
+		{parts.Spec, "ebnf-render-spec", "../alchemy/render-spec.alc"},
+	} {
+		if p.part == nil || p.part.Entry != p.entry {
+			t.Fatalf("%s's part is %#v", p.entry, p.part)
+		}
+		text, err := os.ReadFile(p.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.part.Source != string(text) {
+			t.Fatalf("embedded %s differs from %s: run npm run embed in ts", p.entry, p.file)
+		}
+	}
 }
 
 // An embed takes a plain tree into a format's own schema. A grammar spec
@@ -80,61 +99,87 @@ func TestTranslationEmbed(t *testing.T) {
 	}
 }
 
-// The tree is the grammar spec, an object, of the schema the three
-// BNF-family notations share; reading a document is compiling it, which
-// is the host's to do, so the manifest names no lift.
+// The tree is the grammar's rules, an object, of the schema the three
+// BNF-family notations share, streamed by the part, so the manifest names
+// no lift and nothing read whole; the compiled spec's route is spec, of
+// the schema grammar-spec.
 func TestTranslationSchema(t *testing.T) {
+	type route struct {
+		Reads     string   `json:"reads"`
+		Writes    string   `json:"writes"`
+		Root      string   `json:"root"`
+		Schema    string   `json:"schema"`
+		Lift      *string  `json:"lift"`
+		Transduce *string  `json:"transduce"`
+		Whole     *string  `json:"whole"`
+		Loss      []string `json:"loss"`
+	}
 	var spec struct {
 		LanguageID string `json:"languageId"`
 		Translate  struct {
-			Reads  string   `json:"reads"`
-			Writes string   `json:"writes"`
-			Root   string   `json:"root"`
-			Schema string   `json:"schema"`
-			Lift   *string  `json:"lift"`
-			Loss   []string `json:"loss"`
+			route
+			Spec route `json:"spec"`
 		} `json:"translate"`
 	}
 	if err := json.Unmarshal([]byte(Translate().Manifest), &spec); err != nil {
 		t.Fatal(err)
 	}
 	tr := spec.Translate
-	if spec.LanguageID != "ebnf" || tr.Reads != "tree" || tr.Writes != "tree" || tr.Root != "object" || tr.Schema != "grammar-spec" || tr.Lift != nil {
-		t.Fatalf("translate is %+v", tr)
+	if spec.LanguageID != "ebnf" || tr.Reads != "tree" || tr.Writes != "tree" || tr.Root != "object" ||
+		tr.Schema != "grammar-rules" || tr.Lift != nil || tr.Whole != nil ||
+		tr.Transduce == nil || *tr.Transduce != "alchemy/transduce.alc" {
+		t.Fatalf("translate is %+v", tr.route)
 	}
-	if len(tr.Loss) == 0 {
-		t.Fatal("translate.loss is empty")
+	if tr.Spec.Schema != "grammar-spec" || tr.Spec.Root != "object" {
+		t.Fatalf("translate.spec is %+v", tr.Spec)
 	}
-	for _, line := range tr.Loss {
-		if line == "" || !strings.HasSuffix(line, ".") || strings.ToUpper(line[:1]) != line[:1] {
-			t.Fatalf("%q is not a sentence", line)
+	for _, loss := range [][]string{tr.Loss, tr.Spec.Loss} {
+		if len(loss) == 0 {
+			t.Fatal("a loss list is empty")
+		}
+		for _, line := range loss {
+			if line == "" || !strings.HasSuffix(line, ".") || strings.ToUpper(line[:1]) != line[:1] {
+				t.Fatalf("%q is not a sentence", line)
+			}
 		}
 	}
 }
 
-// The render is a library a host links with its own program: every
-// definition is named for EBNF, and its entry point is ebnf-render.
+// The part and the renders are libraries a host links with its own
+// program: every definition is named for EBNF, each defines its entry
+// point, and the two renders, which a host may link together, share no
+// name.
 func TestTranslationRenderIsALibrary(t *testing.T) {
-	found := false
-	for _, line := range strings.Split(Translate().Render.Source, "\n") {
-		if !strings.HasPrefix(line, "def ") {
-			continue
+	defs := func(source string) map[string]bool {
+		names := map[string]bool{}
+		for _, line := range strings.Split(source, "\n") {
+			if !strings.HasPrefix(line, "def ") {
+				continue
+			}
+			name := strings.Fields(strings.TrimPrefix(line, "def "))[0]
+			if !strings.HasPrefix(name, "ebnf-") {
+				t.Fatalf("%s is not named for ebnf", name)
+			}
+			names[name] = true
 		}
-		name := strings.Fields(strings.TrimPrefix(line, "def "))[0]
-		if !strings.HasPrefix(name, "ebnf-") {
-			t.Fatalf("%s is not named for ebnf", name)
-		}
-		if name == "ebnf-render" {
-			found = true
+		return names
+	}
+	parts := Translate()
+	for _, part := range []*TranslationPart{parts.Transduce, parts.Render, parts.Spec} {
+		if !defs(part.Source)[part.Entry] {
+			t.Fatalf("a part defines no %s", part.Entry)
 		}
 	}
-	if !found {
-		t.Fatal("the render defines no ebnf-render")
+	render := defs(parts.Render.Source)
+	for name := range defs(parts.Spec.Source) {
+		if render[name] {
+			t.Fatalf("%s is defined in both renders", name)
+		}
 	}
 }
 
-// What a host reads an EBNF document as: the pure-data grammar spec of
-// the spec Ebnf converts with Builtins on, which bnf.ToPureSpec and
+// What a host that takes the grammar-spec route reads an EBNF document
+// as: the pure-data grammar spec of the spec Ebnf converts with Builtins on, which bnf.ToPureSpec and
 // bnf.ToJsonic write as strict JSON (its keys in name order, where the
 // TypeScript and Rust compilers write them in the order they emit them),
 // valid JSON whose root is an object holding the rules and the options.

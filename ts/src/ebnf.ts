@@ -78,6 +78,9 @@ export type {
   EbnfGrammar,
 }
 
+export { make, parseEbnfTree, ebnfTreeRules } from './tree'
+export type { EbnfTree, EbnfTreeRule, EbnfTreeElement, EbnfTreeRepeat } from './tree'
+
 export { translate } from './translate'
 export type { TranslationPart, TranslationParts } from './translate'
 
