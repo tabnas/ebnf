@@ -50,7 +50,7 @@
     ".": "./dist/ebnf.js"
   },
   "peerDependencies": {
-    "@tabnas/parser": ">=0.12.16",
+    "@tabnas/parser": ">=0.12.19",
     "@tabnas/bnf": ">=0.1.33"
   },
   "devDependencies": {
