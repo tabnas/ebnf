@@ -657,6 +657,11 @@ func treeRef() map[tabnas.FuncRef]any {
 // parser a host streams a document through with the part, whose rule
 // passes the part reads, and whose value is the tree, an
 // *tabnas.OrderedMap (nil for a source that makes no pass).
+//
+// It reads a source a window at a time when it is parsed from a reader
+// (Tabnas.ParseReader, Lex.Window): its matchers read the text only through
+// the window, the meta-grammar's match tokens and its ISO comments behind
+// ebnfReach.
 func Make() *tabnas.Tabnas {
 	opts := metaOptions()
 	opts.Error = treeOptions.Error
@@ -676,7 +681,107 @@ func Make() *tabnas.Tabnas {
 		// The meta-grammar is this package's own, so it always installs.
 		panic("ebnf: the tree parser does not install: " + err.Error())
 	}
+	window := true
+	j.SetOptions(tabnas.Options{Lex: &tabnas.LexOptions{
+		Window: &window,
+		Match:  map[string]*tabnas.MatchSpec{"ebnf-reach": reachMatcher(ebnfReach)},
+	}})
 	return j
+}
+
+// ebnfReach reports whether the byte that decides how far EBNF's own
+// matchers read lies in window, the text from the cursor, and when it does
+// not, how many bytes they would read there. `::=` reads three bytes; a
+// character class reads to the `]` that closes it or the line's end, where
+// an unclosed class fails; a code point reads `#x` and its hex digits and
+// the byte after; `(` reads the byte after, and an ISO comment, `(*`, to
+// the `*)` that closes it. Every other token is the engine's, whose
+// matchers read the window themselves.
+func ebnfReach(window string) (bool, int) {
+	if window == "" {
+		return false, 0
+	}
+	switch window[0] {
+	case ':':
+		return fixedReach(window, 3)
+	case '[':
+		at := 1
+		if at < len(window) && window[at] == '^' {
+			at++
+		}
+		return run(window, at, func(c byte) bool { return c != ']' && c != '\n' })
+	case '#':
+		at := 1
+		if at < len(window) && window[at] == 'x' {
+			at++
+		}
+		return run(window, at, func(c byte) bool {
+			return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+		})
+	case '(':
+		if len(window) < 2 {
+			return false, 1
+		}
+		if window[1] != '*' {
+			return true, 1
+		}
+		if strings.Contains(window[2:], "*)") {
+			return true, 0
+		}
+		return false, len(window)
+	}
+	return true, 0
+}
+
+// fixedReach reports whether window holds the n bytes a token of n bytes is
+// decided by; and when it does not, the bytes read.
+func fixedReach(window string, n int) (bool, int) {
+	if len(window) >= n {
+		return true, n
+	}
+	return false, len(window)
+}
+
+// run reports whether a byte outside within follows the run that within
+// holds from at on in window, which decides where the run ends; and when
+// none does, the bytes read.
+func run(window string, at int, within func(byte) bool) (bool, int) {
+	for ; at < len(window); at++ {
+		if !within(window[at]) {
+			return true, at
+		}
+	}
+	return false, at
+}
+
+// reachMatcher is a lexer matcher that runs before every other one and
+// cuts no token: in a parse from a reader a window at a time, the text after
+// the cursor is the window's, which may end inside a token, so that a match
+// token's expression would match a shorter token, or none, where the whole
+// text has a longer one. It reads the window on, twice as far each time,
+// until the byte that decides where the token ends lies inside it (reach)
+// or the source has ended, so that every matcher after it sees what the
+// whole text shows it. A whole text is all read.
+func reachMatcher(reach func(string) (bool, int)) *tabnas.MatchSpec {
+	return &tabnas.MatchSpec{
+		Order: 900000,
+		Make: func(_ *tabnas.LexConfig, _ *tabnas.Options) tabnas.LexMatcher {
+			return func(lex *tabnas.Lex, _ *tabnas.Rule) *tabnas.Token {
+				if !lex.Windowed() {
+					return nil
+				}
+				ahead := 1
+				for {
+					held := lex.Fill(ahead)
+					decided, read := reach(lex.Window())
+					if decided || !held {
+						return nil
+					}
+					ahead = max(read+1, 2*ahead)
+				}
+			}
+		},
+	}
 }
 
 // ParseEbnfTree reads an EBNF document whole as the tree. A source the

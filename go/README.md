@@ -64,7 +64,8 @@ schema grammar-rules, the rules as the text writes them in source order,
 an `*tabnas.OrderedMap` whose members keep the order the schema gives
 them. `Make` builds the parser that yields that tree, the one tabnas rule
 table in this port, which carries the Rust crate's grammar document so
-that its rule passes are the other runtimes', and `Translate()` carries
+that its rule passes are the other runtimes', and whose `ParseReader`
+reads a document a window at a time, never whole, and `Translate()` carries
 the transducer part, `Transduce`, which streams the tree from those
 passes, beside the render that writes it back as W3C EBNF and `Spec`,
 the render of the grammar-spec route. `../test/spec/tree.tsv` holds this

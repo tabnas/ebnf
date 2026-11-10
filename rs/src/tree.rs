@@ -31,10 +31,10 @@
 //! and its drop recurses.
 
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use indexmap::IndexMap;
-use tabnas::{ActionError, Rule, Tabnas, Value};
+use tabnas::{ActionError, Context, LexMatcher, Lexer, Rule, Tabnas, Value};
 
 use crate::converter::EbnfParseError;
 use crate::parser_ebnf::{
@@ -478,11 +478,129 @@ fn register_tree_refs(parser: &mut Tabnas) {
 /// let tree = tabnas_ebnf::make().parse("a ::= b").unwrap();
 /// assert_eq!(tree.to_json()["rules"][0]["name"], "a");
 /// ```
+///
+/// It reads a source a window at a time when it is parsed from a reader
+/// ([`Tabnas::parse_reader`], `lex.window`): its matchers read the text only
+/// through the window, the meta-grammar's match tokens behind
+/// [`ebnf_reach`].
 #[must_use]
 pub fn make() -> Tabnas {
     // The meta-grammar is this crate's own, so it always installs.
-    build_parser(register_tree_refs, &TREE_ERRORS)
-        .expect("ebnf: the tree parser installs its own meta-grammar")
+    let mut parser = build_parser(register_tree_refs, &TREE_ERRORS)
+        .expect("ebnf: the tree parser installs its own meta-grammar");
+    parser
+        .set_options(|options| {
+            options.lex.window = true;
+            options.lex.matchers.insert(
+                "ebnf-reach".to_string(),
+                reach_matcher("ebnf-reach", ebnf_reach),
+            );
+        })
+        .expect("ebnf: the tree parser takes the window and its reach");
+    parser
+}
+
+/// Whether the character that decides how far EBNF's own matchers read lies
+/// in `window`, the text from the cursor, and when it does not, how many
+/// characters they would read there. `::=` reads three characters; a
+/// character class reads to the `]` that closes it or the line's end, where
+/// an unclosed class fails; a code point reads `#x` and its hex digits and
+/// the character after; `(` reads the character after, and an ISO comment,
+/// `(*`, to the `*)` that closes it. Every other token is the engine's,
+/// whose matchers read the window themselves.
+fn ebnf_reach(window: &str) -> Result<(), usize> {
+    let mut chars = window.chars().peekable();
+    match chars.next() {
+        None => Err(0),
+        Some(':') => fixed(window, 3),
+        Some('[') => {
+            let mut read = 1;
+            if chars.peek() == Some(&'^') {
+                chars.next();
+                read += 1;
+            }
+            run(chars, read, |c| c != ']' && c != '\n')
+        }
+        Some('#') => {
+            let mut read = 1;
+            if chars.peek() == Some(&'x') {
+                chars.next();
+                read += 1;
+            }
+            run(chars, read, |c| c.is_ascii_hexdigit())
+        }
+        Some('(') => match chars.next() {
+            None => Err(1),
+            Some('*') => match window[2..].find("*)") {
+                Some(_) => Ok(()),
+                None => Err(window.chars().count()),
+            },
+            Some(_) => Ok(()),
+        },
+        Some(_) => Ok(()),
+    }
+}
+
+/// Whether the unit after `fixed` characters of `window` is in it: a token
+/// of `fixed` characters is decided once they are held; and when they are
+/// not, the characters read.
+fn fixed(window: &str, fixed: usize) -> Result<(), usize> {
+    let held = window.chars().take(fixed).count();
+    if held == fixed {
+        Ok(())
+    } else {
+        Err(held)
+    }
+}
+
+/// Whether a character outside `within` follows the run of `chars` that
+/// `within` holds, which decides where the run ends; and when none does,
+/// the characters read, `read` before `chars` among them.
+fn run(
+    chars: impl Iterator<Item = char>,
+    mut read: usize,
+    within: impl Fn(char) -> bool,
+) -> Result<(), usize> {
+    for c in chars {
+        if !within(c) {
+            return Ok(());
+        }
+        read += 1;
+    }
+    Err(read)
+}
+
+/// A lexer matcher that runs before every other one and cuts no token: in a
+/// parse from a reader a window at a time, the text after the cursor is the
+/// window's, which may end inside a token, so that a match token's
+/// expression would match a shorter token, or none, where the whole text
+/// has a longer one. It reads the window on, twice as far each time, until
+/// the character that decides where the token ends lies inside it (`reach`)
+/// or the source has ended, so that every matcher after it sees what the
+/// whole text shows it. A whole text is all read.
+fn reach_matcher(name: &str, reach: fn(&str) -> Result<(), usize>) -> LexMatcher {
+    LexMatcher {
+        name: name.to_string(),
+        order: 900_000.0,
+        matcher: None,
+        imperative: Some(Arc::new(
+            move |lexer: &mut Lexer<'_>, _rule: &mut Rule, _context: &mut Context| {
+                if !lexer.windowed() {
+                    return None;
+                }
+                let mut ahead = 1;
+                loop {
+                    let held = lexer.fill(ahead);
+                    match reach(lexer.window()) {
+                        Ok(()) => return None,
+                        Err(_) if !held => return None,
+                        Err(read) => ahead = (read + 1).max(2 * ahead),
+                    }
+                }
+            },
+        )),
+        factory: None,
+    }
 }
 
 /// An EBNF document read whole as the tree. A source the meta-grammar
