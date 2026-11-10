@@ -429,6 +429,14 @@ function ebnfReach(w: string): number {
 // the token ends lies inside it (`reach`) or the source has ended, so that
 // every matcher after it sees what the whole text shows it. A whole text is
 // all read.
+//
+// The cut it guards is the meta-grammar's own: `isoCommentMatcher` reads
+// `(*` by position and declines a `(` the window ends at, and the
+// fixed-token matcher then cuts `(`; a class's or a code point's expression
+// likewise settles for what the window shows. Neither can say that it
+// wanted more text, so the engine, which cuts a token again only after a
+// matcher read to the window's end (tabnas/parser#326), cannot know to:
+// this matcher is the fix, not a workaround.
 function reachMatcher(reach: (w: string) => number): any {
   return {
     order: 9e5,
