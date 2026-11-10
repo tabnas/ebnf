@@ -136,6 +136,9 @@ A fresh parser whose value is the tree: the parser a host streams a
 document through with the transducer part, `translate().transduce`,
 which makes the tree's events from its rule passes.
 
+It declares `lex.window`, so `tn.parseReader(reader)` reads a document a
+window at a time, never whole.
+
 ### `ebnfTreeRules`
 
 The meta-grammar's rule table with the tree's actions: the alternates of

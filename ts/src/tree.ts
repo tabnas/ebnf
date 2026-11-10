@@ -393,6 +393,60 @@ function treeRules(): typeof ebnfRules {
 const ebnfTreeRules = treeRules()
 
 
+// Where EBNF's own matchers stop reading, in `w`, the text from the cursor:
+// the index of the unit that decides how far their token runs, past which
+// none of them reads. `::=` reads three units; a character class reads to
+// the `]` that closes it or the line's end, where an unclosed class fails;
+// a code point reads `#x` and its hex digits and the unit after; `(` reads
+// the unit after, and an ISO comment, `(*`, to the `*)` that closes it.
+// Every other token is the engine's, whose matchers read the window
+// themselves.
+function ebnfReach(w: string): number {
+  switch (w[0]) {
+    case ':':
+      return 2
+    case '[':
+      return (/^\[\^?[^\]\n]*/.exec(w) as RegExpExecArray)[0].length
+    case '#':
+      return (/^#x?[0-9A-Fa-f]*/.exec(w) as RegExpExecArray)[0].length
+    case '(': {
+      if ('*' !== w[1]) return 1
+      const end = w.indexOf('*)', 2)
+      return end < 0 ? w.length : end + 1
+    }
+    default:
+      return 0
+  }
+}
+
+
+// A lexer matcher that runs before every other one and cuts no token: in a
+// parse from a reader a window at a time (`lex.window`, admin ADR-30), the
+// text after the cursor is the window's, which may end inside a token, so
+// that a match token's expression, or the ISO comment's matcher, would cut
+// a shorter token, or none, where the whole text has a longer one. It reads
+// the window on, twice as far each time, until the unit that decides where
+// the token ends lies inside it (`reach`) or the source has ended, so that
+// every matcher after it sees what the whole text shows it. A whole text is
+// all read.
+function reachMatcher(reach: (w: string) => number): any {
+  return {
+    order: 9e5,
+    make: () => (lex: any) => {
+      if (!lex.windowOpen) return undefined
+      let ahead = 1
+      for (;;) {
+        lex.fill(ahead)
+        const w: string = lex.window()
+        const decides = reach(w)
+        if (decides < w.length || !lex.windowOpen) return undefined
+        ahead = Math.max(decides + 1, 2 * w.length)
+      }
+    },
+  }
+}
+
+
 // A fresh parser that reads an EBNF document as the tree: the parser a
 // host streams a document through with the part, whose rule passes the
 // part reads, and whose value is the tree.
@@ -401,6 +455,7 @@ function make(): any {
   const options = ebnfOptions()
   options.error = { ...TREE_OPTIONS.error }
   options.hint = { ...TREE_OPTIONS.hint }
+  options.lex = { window: true, match: { 'ebnf-reach': reachMatcher(ebnfReach) } }
   const tn = new Tabnas(options)
   installEbnfRules(tn, ebnfTreeRules)
   return tn

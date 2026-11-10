@@ -236,7 +236,8 @@ the grammar notations share: the rules as the text writes them, in
 source order, before any compiler has seen them. `parse_ebnf_tree` reads
 it whole, and `make` builds the parser that yields it, which a host
 streams through the transducer part `translate()` carries as
-`transduce`, beside the render that writes the tree back as W3C EBNF.
+`transduce`, and whose `parse_reader` reads a document a window at a
+time, never whole, beside the render that writes the tree back as W3C EBNF.
 
 ```rust
 use tabnas_ebnf::parse_ebnf_tree;
